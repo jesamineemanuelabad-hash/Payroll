@@ -1,43 +1,46 @@
 # Payroll & Benefits Management System
 
-A production-oriented Payroll Management increment built with Next.js App Router, strict TypeScript, Tailwind CSS, shadcn-style Radix primitives, TanStack Table, React Hook Form, Zod, and Supabase.
+A Next.js, TypeScript, and Supabase application with persistent CRUD for employees, attendance, compensation, benefits, claims, and draft payroll records.
 
 ## Run locally
 
-```bash
+```powershell
 npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. Without environment variables, the application intentionally uses typed Philippine payroll sample data and labels it as demo data.
+Open `http://localhost:3000` for the marketing site. Operational record pages, Overview, and HR Analytics require Supabase configuration and an authenticated account. Without configuration they show setup guidance rather than fabricated metrics.
 
 ## Connect Supabase
 
-1. Create a Supabase project and copy `.env.example` to `.env.local`.
-2. Set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Keep the service-role key server-only and use it only for trusted administrative jobs.
-3. Apply `supabase/migrations/202608280001_initial_payroll_benefits.sql` with the Supabase CLI or SQL editor.
-4. Apply `supabase/seed.sql` for department and benefits catalog data.
-5. Create profiles and role assignments through a trusted onboarding function or service-role process; direct client inserts are intentionally blocked by RLS.
+Follow [the setup guide](docs/supabase-setup.md) to apply **all ten migrations**, create the first administrator securely, set `.env.local`, and sign in at `/login`. The latest migrations protect the system owner, enforce active-account RBAC and mandatory MFA for privileged roles, enable live reporting, add the auditable payroll engine and approval workflow, and provide account/access management.
 
-The public SaaS marketing site opens at `/`. The authenticated-style product workspace opens at `/overview`. Operational routes include:
+## Record workspaces
 
-- `/payroll-benefits/attendance` — ESS employee, salary, and time-record synchronization
-- `/payroll-benefits/payroll` — payroll processing and calculation review
-- `/payroll-benefits/compensation` — salary adjustments, history, and payroll application
-- `/payroll-benefits/benefits` — benefit eligibility, administration, and payroll application
-- `/payroll-benefits/claims` — ESS claims, document verification, and reimbursement processing
-- `/payroll-benefits/analytics` — payroll analytics and XGBoost attendance intelligence
+| Route | Records |
+| --- | --- |
+| `/payroll-benefits/attendance` | Employees, attendance, paid-leave approvals, departments |
+| `/payroll-benefits/compensation` | Salary proposals, review cycles, salary history |
+| `/payroll-benefits/benefits` | Employee benefits, plans, providers |
+| `/payroll-benefits/claims` | Claims, document links, review decisions |
+| `/payroll-benefits/payroll` | Draft runs and employee payroll entries |
+| `/settings/profile` | Signed-in account profile and password |
+| `/settings/access` | Super-admin user invitations, RBAC roles, account status, and department scope |
+| `/mfa/setup` | TOTP authenticator enrollment, backup factors, and factor removal |
 
-All record workspaces support CSV download and genuine `.xlsx` export. Analytics charts replay their motion on page load, browser refresh, manual refresh, and filter changes while respecting reduced-motion preferences.
+Record pages support forms, validation, search, pagination, detail views, updates, confirmed deletion, CSV/Excel exports, and audit history. Draft payroll can be calculated from effective salaries, attendance minutes, approved paid leave, benefits, claims, bonuses, and statutory rules. The payroll detail route exports a detailed Excel register and a print/PDF-ready register plus one payslip per employee.
 
-The Overview is an interactive SaaS-style command center with live range and department filters, animated KPI sparklines, hoverable cost trends, drill-through pipeline stages, completable action items, segmented activity, and a global `Ctrl/⌘ + K` command palette.
+## Scope
+
+CRUD, cutoff payroll calculation, payroll approval/payment states, automatic approved compensation application, payslips, and live Overview/HR Analytics reporting are implemented. The Analytics page can run the configured XGBoost HTTP service and persist validated predictions. The Attendance page can invoke a configured ESS synchronization service. File uploads, bank disbursement, Pag-IBIG/loan rules, and holiday/rest-day premium calendars remain separate integrations. Statutory tables are versioned in the calculation snapshot and must be reviewed when government rules change.
 
 ## Verification
 
-```bash
+```powershell
+npm run test
 npm run typecheck
 npm run lint
 npm run build
 ```
 
-See `docs/architecture.md` for the UX, database, folder, and component architecture guiding the next module increments.
+Database tests use an isolated PostgreSQL engine and simulated Auth identities. Complete the hosted-Supabase smoke checks in [the setup guide](docs/supabase-setup.md) after connecting your project.

@@ -47,7 +47,11 @@ export async function exportRecordsToExcel(fileName: string, sheetName: string, 
 }
 
 export function downloadRecordsAsCsv(fileName: string, columns: ExportColumn[], records: ExportRecord[]) {
-  const escape = (value: ExportValue) => `"${String(value).replaceAll('"', '""')}"`;
+  const escape = (value: ExportValue) => {
+    // Keep untrusted text from becoming spreadsheet formulas; preserve numeric negatives.
+    const text = typeof value === "string" && /^[\s]*[=+@\-\t\r\n]/.test(value) ? `'${value}` : String(value);
+    return `"${text.replaceAll('"', '""')}"`;
+  };
   const csv = [
     columns.map((column) => escape(column.label)).join(","),
     ...records.map((record) => columns.map((column) => escape(record[column.key] ?? "")).join(",")),

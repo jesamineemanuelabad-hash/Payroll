@@ -112,6 +112,38 @@ select {
   animation: chart-donut 1s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
+@keyframes login-enter {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.login-enter {
+  animation: login-enter 0.65s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.login-grid {
+  background-image: radial-gradient(rgba(199, 210, 254, 0.3) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+@keyframes login-preview-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-5px); }
+}
+
+@keyframes login-card-float {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(-2px, -7px, 0); }
+}
+
+.login-preview-float {
+  animation: login-preview-float 7s ease-in-out infinite;
+}
+
+.login-float-card {
+  animation: login-card-float 5s ease-in-out 0.8s infinite;
+}
+
 .skeleton {
   animation: skeleton-pulse 1.8s ease-in-out infinite;
   background: #e8ebf0;
@@ -124,4 +156,18 @@ select {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+@media print {
+  @page { size: A4 portrait; margin: 12mm; }
+  body:has(.payroll-print) { background: white; }
+  body:has(.payroll-print) aside,
+  body:has(.payroll-print) > div > div > header { display: none !important; }
+  body:has(.payroll-print) main { max-width: none !important; padding: 0 !important; }
+  body:has(.payroll-print) main,
+  body:has(.payroll-print) main > div { margin: 0 !important; }
+  .payroll-print { max-width: none !important; padding: 0 !important; }
+  .print-sheet { break-after: page; }
+  .print-sheet:last-child { break-after: auto; }
+  .payslip { min-height: 250mm; border: 0 !important; }
 }

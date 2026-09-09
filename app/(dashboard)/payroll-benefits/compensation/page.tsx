@@ -1,5 +1,6 @@
-import { CompensationWorkspace } from "@/components/compensation/compensation-workspace";
+import { RecordPage } from "@/components/records/record-page";
+import { modules } from "@/lib/records/config";
 
-export default function CompensationPage() {
-  return <CompensationWorkspace />;
+export default function Page() {
+  return <RecordPage entityKeys={modules.compensation} />;
 }

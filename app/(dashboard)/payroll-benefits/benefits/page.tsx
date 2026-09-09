@@ -1,5 +1,6 @@
-import { BenefitsWorkspace } from "@/components/benefits/benefits-workspace";
+import { RecordPage } from "@/components/records/record-page";
+import { modules } from "@/lib/records/config";
 
-export default function BenefitsPage() {
-  return <BenefitsWorkspace />;
+export default function Page() {
+  return <RecordPage entityKeys={modules.benefits} />;
 }

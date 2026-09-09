@@ -1,7 +1,6 @@
-import { PayrollManagement } from "@/components/payroll/payroll-management";
-import { getPayrollDashboard } from "@/lib/data/payroll-queries";
+import { RecordPage } from "@/components/records/record-page";
+import { modules } from "@/lib/records/config";
 
-export default async function PayrollPage() {
-  const data = await getPayrollDashboard();
-  return <PayrollManagement data={data} />;
+export default function Page() {
+  return <RecordPage entityKeys={modules.payroll} />;
 }

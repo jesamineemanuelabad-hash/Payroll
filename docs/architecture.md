@@ -1,5 +1,7 @@
 # Payroll & Benefits — incremental architecture
 
+> September 6 update: operational routes use `RecordPage` / `RecordWorkspace` and validated Supabase RPCs. Overview and HR Analytics read permission-checked live aggregates; HR Analytics can persist XGBoost predictions; and payroll has a database-side, versioned calculation and approval engine with paid leave, statutory deductions, approved compensation, detailed Excel, and print-ready payslips. See [Supabase setup](supabase-setup.md) for deployment and review requirements.
+
 ## 1. UX architecture
 
 The product uses one calm, collapsible workspace shell. A cross-functional Overview provides the operational starting point, while **Payroll & Benefits** is the only expanded navigation group and exposes Payroll, Compensation, Claims, Benefits, and Analytics without duplicating global navigation. Desktop favors dense, scannable workflows; small screens retain hierarchy and move primary navigation into a drawer.
@@ -18,7 +20,7 @@ Loading, empty-filter, and error states use the same page geometry to avoid layo
 
 The source of truth is PostgreSQL through Supabase. `profiles` belongs to `auth.users`; organizational scope is represented by departments plus explicit manager access. Payroll runs own immutable payroll items. Approval and status changes are recorded in `audit_logs`. Compensation, claims, and benefits use normalized domain tables and database enums.
 
-Authorization is enforced in PostgreSQL with helper functions and row-level policies. Employees can read only their own sensitive records. Managers can read profiles and approved records inside departments granted through `manager_departments`. Payroll and HR roles receive narrowly scoped write access; the service role is never exposed to the browser.
+Authorization is enforced in PostgreSQL with helper functions and row-level policies. Employees can read only their own sensitive records. Managers can read profiles and approved records inside departments granted through `manager_departments`. Payroll and HR roles receive narrowly scoped write access. Terminated profiles are denied immediately by the database and banned in Supabase Auth by the server-side access action. Super-admin access changes use audited database functions with owner and last-admin lockout protection; direct authenticated role-table writes are revoked. The service role is never exposed to the browser and is used only by server-side bootstrap, invitation, and account-status workflows.
 
 The complete migration, indexes, constraints, trigger functions, and RLS policies are in `supabase/migrations/202608280001_initial_payroll_benefits.sql`.
 
@@ -56,15 +58,15 @@ supabase/
 types/
 ```
 
-Pages remain Server Components and call query modules. Client Components are limited to navigation state, table interactions, dialogs, and form state. When Supabase environment variables are absent, the query module returns typed sample data so UI development stays deterministic.
+Pages load their initial data through authenticated Server Components and permission-checked RPCs. Client Components handle navigation, filters, chart animation, exports, dialogs, and form state. When Supabase is unavailable, operational pages show an explicit setup state; they do not substitute sample records.
 
 ## 4. Component architecture
 
 - `DashboardShell`: responsive navigation and workspace chrome.
 - `PageHeader`, `MetricCard`, `StatusBadge`: shared information primitives.
-- `PayrollManagement`: search, filters, sorting, pagination, export, and create-run dialog.
-- `PayrollTable`: TanStack Table configuration with accessible column controls and menus.
-- `CreatePayrollRunDialog`: React Hook Form with centralized Zod validation.
-- `getPayrollDashboard`: server-only data boundary mapping database rows into view models.
+- `RecordWorkspace`: live CRUD, search, references, audit history, CSV, and Excel for operational entities.
+- `PayrollRunActions`: calculation, submission, approval, return-to-draft, paid status, register export, and payslip printing.
+- `AccessControl`: invitation, roles, manager scope, payroll eligibility, and Auth-backed account activation.
+- `OverviewDashboard` / `HrAnalyticsDashboard`: live aggregate reporting and model-scoring controls.
 
-The next increments can add Compensation, Claims, Benefits, and Analytics behind the established navigation and shared primitives without growing the payroll page into a monolith.
+ESS persistence and XGBoost execution remain server-only integration boundaries. Bank disbursement, uploads, Pag-IBIG/loans, and holiday/rest-day calendars require separate reviewed integrations or rule migrations.

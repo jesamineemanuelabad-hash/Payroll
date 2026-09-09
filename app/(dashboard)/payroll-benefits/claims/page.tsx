@@ -1,5 +1,6 @@
-import { ClaimsWorkspace } from "@/components/claims/claims-workspace";
+import { RecordPage } from "@/components/records/record-page";
+import { modules } from "@/lib/records/config";
 
-export default function ClaimsPage() {
-  return <ClaimsWorkspace />;
+export default function Page() {
+  return <RecordPage entityKeys={modules.claims} />;
 }

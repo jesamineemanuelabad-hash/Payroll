@@ -21,7 +21,7 @@ export function CreatePayrollRunDialog() {
   const [open, setOpen] = useState(false);
   const form = useForm<CreatePayrollRunInput>({
     resolver: zodResolver(createPayrollRunSchema),
-    defaultValues: { periodStart: "2026-09-01", periodEnd: "2026-09-15", payDate: "2026-09-20", includeActiveEmployees: true },
+    defaultValues: { periodStart: "2026-09-01", periodEnd: "2026-09-15", payDate: "2026-09-15", includeActiveEmployees: true },
   });
 
   async function onSubmit(values: CreatePayrollRunInput) {

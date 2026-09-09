@@ -1,0 +1,49 @@
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { z } from "zod";
+import { getPayrollRunReport } from "@/app/actions/payroll";
+import { PrintButton } from "@/components/payroll/print-button";
+
+const money = (value: number) => new Intl.NumberFormat("en-PH", { style: "currency", currency: "PHP" }).format(value);
+const date = (value: string) => new Intl.DateTimeFormat("en-PH", { dateStyle: "medium", timeZone: "Asia/Manila" }).format(new Date(`${value}T00:00:00+08:00`));
+const label = (value: string) => value.replaceAll("_", " ").replace(/^./, (letter) => letter.toUpperCase());
+
+export default async function PayrollPrintPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  if (!z.string().uuid().safeParse(id).success) notFound();
+  const result = await getPayrollRunReport(id);
+  if (!result.ok) return <div className="payroll-print rounded-xl border bg-white p-8"><h1 className="text-xl font-semibold">Payroll report unavailable</h1><p className="mt-2 text-sm text-red-700">{result.message}</p></div>;
+  const { run, items } = result.data;
+  return <div className="payroll-print mx-auto max-w-5xl bg-white p-6 text-slate-950 sm:p-10">
+    <div className="mb-6 flex items-center justify-between gap-3 print:hidden"><Link href={`/payroll-benefits/payroll/${id}`} className="text-sm font-medium text-indigo-700">← Back to payroll</Link><PrintButton /></div>
+    <section className="print-sheet">
+      <header className="border-b-2 border-slate-950 pb-5">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em]">Priority Handling Logistics, Inc.</p>
+        <h1 className="mt-2 text-3xl font-bold">Payroll Register</h1>
+        <p className="mt-2 text-sm">{date(run.period_start)} – {date(run.period_end)} · Payday {date(run.pay_date)} · {label(run.schedule)}</p>
+      </header>
+      <dl className="mt-5 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <div><dt className="text-slate-500">Employees</dt><dd className="font-semibold">{run.employee_count}</dd></div>
+        <div><dt className="text-slate-500">Gross payroll</dt><dd className="font-semibold">{money(run.total_gross)}</dd></div>
+        <div><dt className="text-slate-500">Deductions</dt><dd className="font-semibold">{money(run.total_deductions)}</dd></div>
+        <div><dt className="text-slate-500">Net payroll</dt><dd className="font-semibold">{money(run.total_net)}</dd></div>
+      </dl>
+      <div className="mt-6 overflow-hidden border border-slate-300">
+        <table className="w-full border-collapse text-left text-[10px]"><thead className="bg-slate-100"><tr>{["Employee","Basic","OT / Bonus","Late","SSS","PhilHealth","BIR","Other","Total deductions","Net pay"].map((x)=><th key={x} className="border-b border-slate-300 px-2 py-2">{x}</th>)}</tr></thead>
+          <tbody>{items.map((item)=><tr key={item.id} className="border-b border-slate-200 last:border-0"><td className="px-2 py-2"><b>{item.employeeName}</b><br />{item.employeeNumber}</td><td className="px-2">{money(item.basicSalary)}</td><td className="px-2">{money(item.overtimePay+item.bonus)}</td><td className="px-2">{money(item.lateDeduction)}</td><td className="px-2">{money(item.sssEmployee)}</td><td className="px-2">{money(item.philhealthEmployee)}</td><td className="px-2">{money(item.withholdingTax)}</td><td className="px-2">{money(item.otherDeductions+item.absenceDeduction+item.benefitDeduction)}</td><td className="px-2">{money(item.totalDeductions)}</td><td className="px-2 font-semibold">{money(item.netPay)}</td></tr>)}</tbody>
+        </table>
+      </div>
+      <p className="mt-4 text-[10px] text-slate-500">Prepared on {date(run.preparation_date)} · Rule set {run.rule_version ?? "Not calculated"} · Review and approve before disbursement.</p>
+    </section>
+
+    {items.map((item) => <section key={item.id} className="print-sheet payslip mt-10 border border-slate-300 p-7 print:mt-0">
+      <header className="flex justify-between gap-4 border-b border-slate-300 pb-4"><div><p className="text-xs font-semibold uppercase tracking-[0.16em]">Priority Handling Logistics, Inc.</p><h2 className="mt-1 text-2xl font-bold">Employee Payslip</h2></div><div className="text-right text-xs"><p>{date(run.period_start)} – {date(run.period_end)}</p><p className="mt-1">Pay date: {date(run.pay_date)}</p></div></header>
+      <div className="mt-5 grid grid-cols-2 gap-4 text-sm"><div><p className="text-slate-500">Employee</p><p className="font-semibold">{item.employeeName}</p><p>{item.employeeNumber} · {item.department}</p></div><div><p className="text-slate-500">Pay basis</p><p className="font-semibold">{label(item.salaryFrequency)}</p><p>{item.workedDays} worked · {item.paidLeaveDays} paid leave days</p></div></div>
+      <div className="mt-6 grid gap-7 sm:grid-cols-2">
+        <div><h3 className="border-b pb-2 text-sm font-semibold">Earnings</h3><dl className="mt-2 space-y-2 text-sm">{[["Basic pay",item.basicSalary],["Allowances",item.allowances],[`Overtime (${item.overtimeMinutes} min)`,item.overtimePay],["Bonus",item.bonus],["Benefits",item.benefits],["Reimbursements",item.reimbursements]].map(([x,v])=><div key={String(x)} className="flex justify-between"><dt>{x}</dt><dd>{money(Number(v))}</dd></div>)}<div className="flex justify-between border-t pt-2 font-semibold"><dt>Gross pay</dt><dd>{money(item.grossPay)}</dd></div></dl></div>
+        <div><h3 className="border-b pb-2 text-sm font-semibold">Deductions</h3><dl className="mt-2 space-y-2 text-sm">{[[`Late (${item.lateMinutes} min)`,item.lateDeduction],[`Undertime (${item.undertimeMinutes} min)`,item.undertimeDeduction],[`Absence (${item.absenceMinutes} min)`,item.absenceDeduction],["SSS employee share",item.sssEmployee],["PhilHealth employee share",item.philhealthEmployee],["BIR withholding tax",item.withholdingTax],["Benefit deductions",item.benefitDeduction],["Other deductions",item.otherDeductions]].map(([x,v])=><div key={String(x)} className="flex justify-between"><dt>{x}</dt><dd>{money(Number(v))}</dd></div>)}<div className="flex justify-between border-t pt-2 font-semibold"><dt>Total deductions</dt><dd>{money(item.totalDeductions)}</dd></div></dl></div>
+      </div>
+      <div className="mt-7 flex items-end justify-between border-t-2 border-slate-950 pt-4"><div className="text-xs text-slate-500"><p>Employer contributions: {money(item.employerContributions)}</p><p>Rule set: {run.rule_version ?? "Not calculated"}</p></div><div className="text-right"><p className="text-xs font-semibold uppercase tracking-wide">Net pay</p><p className="text-2xl font-bold">{money(item.netPay)}</p></div></div>
+    </section>)}
+  </div>;
+}

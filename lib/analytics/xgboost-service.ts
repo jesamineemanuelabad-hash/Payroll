@@ -1,7 +1,7 @@
 import "server-only";
-import { xgboostBatchResponseSchema, type AttendanceFeature, type AttendancePrediction } from "@/lib/analytics/xgboost-contract";
+import { xgboostBatchResponseSchema, type AttendanceFeature, type XgboostBatchResult } from "@/lib/analytics/xgboost-contract";
 
-export async function scoreAttendanceWithXgboost(features: AttendanceFeature[]): Promise<AttendancePrediction[]> {
+export async function scoreAttendanceWithXgboost(features: AttendanceFeature[]): Promise<XgboostBatchResult> {
   const endpoint = process.env.XGBOOST_SERVICE_URL;
   const token = process.env.XGBOOST_SERVICE_TOKEN;
   if (!endpoint || !token) throw new Error("XGBoost service credentials are not configured.");
@@ -15,5 +15,5 @@ export async function scoreAttendanceWithXgboost(features: AttendanceFeature[]):
   if (!response.ok) throw new Error(`XGBoost scoring failed with status ${response.status}.`);
   const parsed = xgboostBatchResponseSchema.safeParse(await response.json());
   if (!parsed.success) throw new Error("XGBoost returned an invalid prediction payload.");
-  return parsed.data.predictions;
+  return parsed.data;
 }

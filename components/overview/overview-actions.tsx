@@ -3,23 +3,28 @@
 import { Download } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { downloadRecordsAsCsv } from "@/lib/export-records";
+import type { LiveDashboardData } from "@/lib/dashboard/schema";
 
-export function DownloadOverviewReport() {
+export function DownloadOverviewReport({ data }: { data: LiveDashboardData }) {
   function downloadReport() {
+    const period = data.readiness
+      ? `${data.readiness.periodStart} to ${data.readiness.periodEnd}`
+      : "No payroll run";
     const rows = [
-      ["Metric", "Value", "Period"],
-      ["Active employees", "248", "August 2026"],
-      ["Net payroll", "6302020.00", "Aug 16-31, 2026"],
-      ["Benefits cost", "857400.00", "August 2026"],
-      ["Pending approvals", "14", "As of Aug 28, 2026"],
+      { metric: "Active employees", value: data.summary.employeeCount, period: "Current" },
+      { metric: "Net payroll", value: data.summary.currentNet, period },
+      { metric: "Gross payroll", value: data.summary.currentGross, period },
+      { metric: "Benefits", value: data.summary.currentBenefits, period },
+      { metric: "Employer contributions", value: data.summary.currentContributions, period },
+      { metric: "Open action items", value: data.summary.openActions, period: data.generatedAt },
     ];
-    const url = URL.createObjectURL(new Blob([rows.map((row) => row.join(",")).join("\n")], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "people-overview-2026-08-28.csv";
-    link.click();
-    URL.revokeObjectURL(url);
-    toast.success("Overview report downloaded", { description: "The August 2026 workforce summary is ready." });
+    downloadRecordsAsCsv(
+      `people-overview-${data.generatedAt.slice(0, 10)}`,
+      [{ key: "metric", label: "Metric" }, { key: "value", label: "Value" }, { key: "period", label: "Period" }],
+      rows,
+    );
+    toast.success("Live overview report downloaded", { description: `${rows.length} current metrics were saved.` });
   }
 
   return <Button variant="secondary" onClick={downloadReport}><Download />Download report</Button>;
