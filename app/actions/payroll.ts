@@ -22,6 +22,7 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<Pa
 }
 
 export type PayrollOperationResult = { ok: true; employees: number; ruleVersion: string } | { ok: false; message: string };
+export type PayrollValidation = { passed: boolean; issues: Array<{ severity: string; code: string; message: string }>; comparisons: Array<{ employeeId: string; sourceReference: string; grossDifference: number; deductionDifference: number; netDifference: number; passed: boolean }> };
 
 export async function calculatePayrollRun(runId: string): Promise<PayrollOperationResult> {
   if (!z.string().uuid().safeParse(runId).success) return { ok: false, message: "Invalid payroll run." };
@@ -37,6 +38,20 @@ export async function calculatePayrollRun(runId: string): Promise<PayrollOperati
     revalidatePath("/payroll-benefits/payroll");
     return { ok: true, employees: result.employees, ruleVersion: result.ruleVersion };
   } catch { return { ok: false, message: "Unable to calculate payroll. Refresh before retrying." }; }
+}
+
+export async function validatePayrollRun(runId: string): Promise<{ ok: true; data: PayrollValidation } | { ok: false; message: string }> {
+  if (!z.string().uuid().safeParse(runId).success) return { ok: false, message: "Invalid payroll run." };
+  if (!hasSupabaseEnvironment()) return { ok: false, message: "Connect Supabase and apply the configurable payroll policy migration." };
+  try {
+    const db = await createSupabaseServerClient();
+    const { data: auth } = await db.auth.getUser();
+    if (!auth.user) return { ok: false, message: "Your session expired. Sign in again." };
+    const { data, error } = await db.rpc("validate_payroll_run", { p_run_id: runId });
+    if (error) return { ok: false, message: error.message };
+    revalidatePath(`/payroll-benefits/payroll/${runId}`);
+    return { ok: true, data: data as unknown as PayrollValidation };
+  } catch { return { ok: false, message: "Unable to validate payroll." }; }
 }
 
 export async function getPayrollRunReport(runId: string): Promise<{ ok: true; data: PayrollRunReport } | { ok: false; message: string }> {

@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test("record pages show honest setup state and disable mutations without a database", async ({ page }) => {
-  for (const route of ["attendance", "compensation", "benefits", "claims", "payroll"]) {
+  for (const route of ["people", "attendance", "compensation", "benefits", "claims", "payroll"]) {
     await page.goto(`/payroll-benefits/${route}`);
     await expect(page.getByText("Database not connected.", { exact: false })).toBeVisible();
     await expect(page.getByRole("button", { name: /^Create / })).toBeDisabled();

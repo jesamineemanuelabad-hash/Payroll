@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft, ArrowRight, BadgeCheck, Check, ChevronDown, CircleAlert, Clock3,
@@ -8,6 +8,7 @@ import {
   ShieldCheck, Sparkles, UsersRound, WalletCards,
 } from "lucide-react";
 import { signIn } from "@/app/actions/auth";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -26,6 +27,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const selected = previews[preview];
   const SelectedIcon = selected.icon;
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("signedOut") !== "1") return;
+    toast.success("Signed out securely", { description: "Your secure workspace session has ended. Sign in again to reopen the dashboard." });
+    url.searchParams.delete("signedOut");
+    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
 
   return (
     <div className="relative min-h-dvh overflow-hidden bg-white text-slate-950">

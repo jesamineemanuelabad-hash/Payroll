@@ -72,10 +72,20 @@ function RecordEditor({ entity, row, parent, close, saved }: { entity: string; r
         return [field.key, value];
       }));
       const result = await saveRecord({ entity, id: row?.id, version: row?.updated_at, values: payload });
-      if (!result.ok) { setError(result.message); setErrors(result.fields ?? {}); return; }
-      toast.success(`${pretty(config.singular)} ${row ? "updated" : "created"}`);
+      if (!result.ok) {
+        setError(result.message); setErrors(result.fields ?? {});
+        toast.error(`${pretty(config.singular)} ${row ? "update" : "creation"} failed`, { description: result.message });
+        return;
+      }
+      const name = recordLabel(entity, result.data);
+      toast.success(`${pretty(config.singular)} ${row ? "updated" : "created"}`, {
+        description: `${name} was ${row ? "updated" : "created"} successfully. The change was saved to the database and added to the audit history.`,
+      });
       saved();
-    } catch { setError("Unable to save. Refresh to check whether the change completed before retrying."); }
+    } catch {
+      const message = "Unable to save. Refresh to check whether the change completed before retrying.";
+      setError(message); toast.error(`${pretty(config.singular)} was not saved`, { description: message });
+    }
     finally { setBusy(false); }
   }
   return <Dialog open onOpenChange={(open) => { if (!open && !busy) close(); }}><DialogContent className="max-w-2xl"><DialogTitle>{row ? "Edit" : "Create"} {config.singular}</DialogTitle><DialogDescription>{config.description}</DialogDescription><form onSubmit={submit} className="mt-5"><fieldset disabled={busy} className="grid gap-4 sm:grid-cols-2">{fields.map((field) => {
@@ -135,12 +145,22 @@ function RecordGrid({ entity, roles, configured, setupError, parent }: Omit<Prop
   }
   async function remove() {
     if (!deleting || busy) return;
+    const deletedLabel = recordLabel(entity, deleting);
     setBusy(true); setDeleteError("");
     try {
       const result = await deleteRecord({ entity, id: deleting.id, version: deleting.updated_at });
-      if (!result.ok) { setDeleteError(result.message); return; }
-      setDeleting(null); toast.success("Record deleted; the audit history is retained."); await refresh();
-    } catch { setDeleteError("Delete could not be confirmed. Refresh the list before retrying."); }
+      if (!result.ok) {
+        setDeleteError(result.message);
+        toast.error(`${pretty(config.singular)} deletion failed`, { description: `${deletedLabel} was not removed. ${result.message}` });
+        return;
+      }
+      setDeleting(null);
+      toast.success(`${pretty(config.singular)} deleted`, { description: `${deletedLabel} was removed successfully. Its audit history is still retained.` });
+      await refresh();
+    } catch {
+      const message = "Delete could not be confirmed. Refresh the list before retrying.";
+      setDeleteError(message); toast.error(`${pretty(config.singular)} deletion failed`, { description: message });
+    }
     finally { setBusy(false); }
   }
   async function showHistory(row: RecordRow) {

@@ -13,7 +13,7 @@ Open `http://localhost:3000` for the marketing site. Operational record pages, O
 
 ## Connect Supabase
 
-Follow [the setup guide](docs/supabase-setup.md) to apply **all ten migrations**, create the first administrator securely, set `.env.local`, and sign in at `/login`. The latest migrations protect the system owner, enforce active-account RBAC and mandatory MFA for privileged roles, enable live reporting, add the auditable payroll engine and approval workflow, and provide account/access management.
+Follow [the setup guide](docs/supabase-setup.md) to apply **all eleven migrations**, create the first administrator securely, set `.env.local`, and sign in at `/login`. The latest migrations protect the system owner, enforce active-account RBAC and mandatory MFA for privileged roles, enable live reporting and automatic on-visit AI attendance scoring, add the auditable payroll engine and approval workflow, and provide account/access management.
 
 ## Record workspaces
 
@@ -32,7 +32,7 @@ Record pages support forms, validation, search, pagination, detail views, update
 
 ## Scope
 
-CRUD, cutoff payroll calculation, payroll approval/payment states, automatic approved compensation application, payslips, and live Overview/HR Analytics reporting are implemented. The Analytics page can run the configured XGBoost HTTP service and persist validated predictions. The Attendance page can invoke a configured ESS synchronization service. File uploads, bank disbursement, Pag-IBIG/loan rules, and holiday/rest-day premium calendars remain separate integrations. Statutory tables are versioned in the calculation snapshot and must be reviewed when government rules change.
+CRUD, effective-dated payroll policy, cutoff payroll calculation, SSS/PhilHealth/Pag-IBIG/BIR deductions, premium overtime, night differential, validation gates, payroll approval/payment states, payslips, and live Overview/HR Analytics reporting are implemented. Visiting Analytics automatically runs the configured XGBoost HTTP service when attendance inputs are stale and persists validated predictions. This is not an unattended scheduled job. Attendance can invoke a configured ESS synchronization service. File uploads, bank disbursement, loan deductions, 13th-month pay, and automatic public-holiday calendar synchronization remain separate integrations. Statutory policy versions must be reviewed when government rules change.
 
 ## Verification
 

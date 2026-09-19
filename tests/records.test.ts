@@ -33,7 +33,7 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       alter default privileges in schema public grant all on tables to authenticated,anon;
       alter default privileges in schema public grant usage,select on sequences to authenticated;
     `);
-    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql"]) {
+    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql", "202609150001_automatic_attendance_scoring.sql", "202609190001_configurable_payroll_policy.sql"]) {
       // PGlite includes gen_random_uuid in core, but not the optional pgcrypto extension.
       const sql = (await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8")).replace("create extension if not exists pgcrypto;", "");
       await db.exec(sql);
@@ -80,6 +80,15 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       await db.query("select set_config('request.jwt.claim.aal','aal2',false)");
       assert.equal((await db.query<{value:boolean}>("select public.has_mfa() value")).rows[0].value,true);
     });
+    await t.test("automatic scoring lease blocks duplicates and rejects unauthorized claims", async () => {
+      const first=await db.query<{value:{status:string}}>("select public.claim_automatic_attendance_scoring() value");
+      assert.equal(first.rows[0].value.status,"no_data");
+      await db.exec("reset role");
+      await db.query("update public.attendance_scoring_state set next_attempt_at=null where id=true");
+      await as(worker);
+      await assert.rejects(db.query("select public.claim_automatic_attendance_scoring()"),/role cannot run/i);
+      await as(admin);
+    });
     await t.test("system owner is protected and excluded from employee operations", async () => {
       const profile = await db.query<Row>("select * from public.profiles where id=$1", [admin]);
       assert.equal(profile.rows[0].is_system_owner, true);
@@ -92,6 +101,14 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       assert.equal(account.rows[0].value.firstName,"Andrea");
       assert.equal(account.rows[0].value.isSystemOwner,true);
       assert.equal(account.rows[0].value.isPayrollEmployee,false);
+    });
+    await t.test("payroll policy is versioned and only a super administrator can configure it", async () => {
+      const policy = { name:"Client validation policy",version:"CLIENT-TEST-v1",effectiveFrom:"2027-01-01",effectiveTo:"",status:"draft",workdaysPerMonth:26,hoursPerDay:8,ordinaryOtMultiplier:1.25,restDayOtMultiplier:1.69,specialDayOtMultiplier:1.69,regularHolidayOtMultiplier:2.6,doubleHolidayOtMultiplier:3.9,nightDifferentialRate:.1,contributionAllocation:"second_cutoff",comparisonTolerance:1,sssEmployeeRate:.05,sssEmployerRate:.10,sssMinMsc:5000,sssMaxMsc:35000,philhealthRate:.05,philhealthFloor:10000,philhealthCeiling:100000,pagibigLowRate:.01,pagibigHighRate:.02,pagibigEmployerRate:.02,pagibigRateThreshold:1500,pagibigSalaryCap:10000 };
+      const saved=await db.query<{value:{version:string;workdays_per_month:number}}>("select public.save_payroll_policy($1::jsonb,null) value",[JSON.stringify(policy)]);
+      assert.equal(saved.rows[0].value.version,"CLIENT-TEST-v1"); assert.equal(Number(saved.rows[0].value.workdays_per_month),26);
+      const snapshot=await db.query<{value:Array<{version:string}>}>("select public.payroll_policy_snapshot() value");
+      assert.ok(snapshot.rows[0].value.some((item)=>item.version==="CLIENT-TEST-v1"));
+      await as(worker); await assert.rejects(db.query("select public.save_payroll_policy($1::jsonb,null)",[JSON.stringify({...policy,version:"DENIED"})]),/super administrator/i); await as(admin);
     });
     await t.test("create, list, update, and delete a department; stale edits and duplicate codes fail", async () => {
       const first = await create("departments", { name: "Finance", code: "FIN" });
@@ -143,6 +160,22 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       await assert.rejects(create("employee_compensation_history", { employee_id: worker, base_salary: 40000, effective_from: "2026-09-20" }), /overlap/);
       created.employee_compensation_history = await update("employee_compensation_history", created.employee_compensation_history, { base_salary: 32000 });
       assert.equal((await read("employee_compensation_history")).rows[0].base_salary, 32000);
+    });
+    await t.test("scoring claims are leased and become current only after successful completion", async () => {
+      const first=await db.query<{value:{status:string;token:string}}>("select public.claim_automatic_attendance_scoring() value");
+      assert.equal(first.rows[0].value.status,"claimed");
+      const token=first.rows[0].value.token;
+      assert.equal((await db.query<{value:{status:string}}>("select public.claim_automatic_attendance_scoring() value")).rows[0].value.status,"busy");
+      assert.equal((await db.query<{value:boolean}>("select public.finish_automatic_attendance_scoring($1,true) value",["00000000-0000-4000-8000-000000000099"])).rows[0].value,false);
+      await assert.rejects(db.query("select public.finish_automatic_attendance_scoring($1,true)",[token]),/completed model run/i);
+      const saved=await db.query<{id:string}>("insert into public.attendance_model_runs(model_version,feature_schema_version,period_start,period_end,records_scored,status,artifact_reference,completed_at,created_by) values ('test-v1','attendance-v1',current_date-30,current_date,1,'completed','https://model.example',now(),$1) returning id",[admin]);
+      assert.equal((await db.query<{value:boolean}>("select public.finish_automatic_attendance_scoring($1,true,$2) value",[token,saved.rows[0].id])).rows[0].value,true);
+      assert.equal((await db.query<{value:{status:string}}>("select public.claim_automatic_attendance_scoring() value")).rows[0].value.status,"up_to_date");
+      created.attendance_records=await update("attendance_records",created.attendance_records,{late_minutes:15});
+      assert.equal((await db.query<{value:{status:string}}>("select public.claim_automatic_attendance_scoring() value")).rows[0].value.status,"claimed");
+      await db.exec("reset role");
+      await db.query("update public.attendance_scoring_state set lease_token=null,lease_until=null where id=true");
+      await as(admin);
     });
     await t.test("compensation cycles and draft proposals support CRUD", async () => {
       created.compensation_cycles = await create("compensation_cycles", { name: "Review", starts_on: "2026-09-01", ends_on: "2026-09-30", budget: 100000 });
@@ -213,7 +246,7 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       assert.equal(refreshed.rows[0].value.anomalies.length, 1);
     });
     await t.test("payroll engine itemizes late minutes, overtime, statutory deductions, paid leave, and payslips", async () => {
-      created.attendance_records = await update("attendance_records", created.attendance_records, { classification: "late", late_minutes: 30, overtime_minutes: 60 });
+      created.attendance_records = await update("attendance_records", created.attendance_records, { classification: "late", late_minutes: 30, overtime_minutes: 60, night_minutes: 60, work_day_type: "rest_day" });
       created.payroll_items = await update("payroll_items", created.payroll_items, { attendance_adjustments: 0, benefits: 0, deductions: 0, other_deductions: 0 });
       const leave = await create("leave_requests", { employee_id: worker, leave_type: "vacation", start_date: "2026-09-02", end_date: "2026-09-02", total_days: 1, is_paid: true, reason: "Approved paid leave", status: "draft" });
       const submitted = await update("leave_requests", leave, { status: "submitted" });
@@ -229,7 +262,7 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
 
       const calculation = await db.query<{ value: { employees: number; ruleVersion: string } }>("select public.calculate_payroll_run_complete($1) value", [created.payroll_runs.id]);
       assert.equal(calculation.rows[0].value.employees, 1);
-      assert.equal(calculation.rows[0].value.ruleVersion, "PH-2025/BIR-2023-v1");
+      assert.equal(calculation.rows[0].value.ruleVersion, "PH-2025-BIR-2023-v2");
       const report = await db.query<{ value: { run: { schedule: string; preparation_date: string }; items: Array<Record<string, number>> } }>("select public.payroll_run_report($1) value", [created.payroll_runs.id]);
       const item = report.rows[0].value.items[0];
       assert.equal(report.rows[0].value.run.schedule, "first_cutoff");
@@ -240,9 +273,12 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       assert.equal(item.absenceMinutes, 0);
       assert.equal(item.absenceDeduction, 0);
       assert.equal(item.overtimeMinutes, 60);
-      assert.equal(item.overtimePay, 227.27);
+      assert.equal(item.overtimePay, 307.27);
+      assert.equal(item.nightDifferential, 18.18);
+      assert.equal(item.restDayOvertimeMinutes, 60);
       assert.equal(item.sssEmployee, 800);
       assert.equal(item.philhealthEmployee, 400);
+      assert.equal(item.pagibigEmployee, 100);
       assert.ok(item.withholdingTax > 0);
       assert.ok(item.netPay < item.grossPay);
       created.payroll_items = (await read("payroll_items", created.payroll_items.id)).rows[0];

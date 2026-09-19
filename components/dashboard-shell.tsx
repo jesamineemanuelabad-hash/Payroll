@@ -6,21 +6,25 @@ import Image from "next/image";
 import type { Route } from "next";
 import payrollLogo from "@/Payroll-logo-removebg.png";
 import { usePathname } from "next/navigation";
-import { signOut } from "@/app/actions/auth";
 import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { SignOutDialog } from "@/components/auth/sign-out-confirmation";
 import {
   BarChart3,
   BriefcaseBusiness,
   ChevronLeft,
+  ChevronDown,
   Command,
   ReceiptText,
   HeartPulse,
   Fingerprint,
   LayoutDashboard,
+  LogOut,
   Menu,
   PanelLeft,
   Search,
   Settings,
+  SlidersHorizontal,
   ShieldCheck,
   UsersRound,
   WalletCards,
@@ -47,6 +51,7 @@ const payrollItems: NavItem[] = [
 
 const commandItems: NavItem[] = [
   { label: "Overview", icon: LayoutDashboard, href: "/overview", roles: ["super_admin", "hr_admin", "payroll_manager", "hr_manager"] },
+  { label: "People", icon: UsersRound, href: "/payroll-benefits/people" },
   ...payrollItems,
 ];
 
@@ -67,6 +72,7 @@ function SidebarContent({ collapsed, onNavigate, userEmail, roles }: { collapsed
   const pathname = usePathname();
   const visiblePayrollItems = payrollItems.filter((item) => isVisible(item, roles));
   const showOverview = roles.some((role) => ["super_admin", "hr_admin", "payroll_manager", "hr_manager"].includes(role));
+  const peopleActive = pathname.startsWith("/payroll-benefits/people");
 
   return (
     <div className="flex h-full flex-col">
@@ -88,7 +94,8 @@ function SidebarContent({ collapsed, onNavigate, userEmail, roles }: { collapsed
           <LayoutDashboard className="size-[18px] shrink-0" />
           {!collapsed && <span>Overview</span>}
         </Link>}
-        <Link href="/payroll-benefits/attendance" className={cn("mt-0.5 flex h-9 w-full items-center rounded-lg text-sm text-slate-600 hover:bg-slate-100", collapsed ? "justify-center" : "gap-3 px-2.5")} aria-label="People" onClick={onNavigate}>
+        <Link href="/payroll-benefits/people" className={cn("relative mt-0.5 flex h-9 w-full items-center rounded-lg text-sm transition", collapsed ? "justify-center" : "gap-3 px-2.5", peopleActive ? "bg-indigo-50 font-medium text-indigo-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")} aria-label="People" title={collapsed ? "People" : undefined} onClick={onNavigate}>
+          {peopleActive && !collapsed && <span className="absolute -left-3 h-5 w-0.5 rounded-r bg-indigo-600" />}
           <UsersRound className="size-[18px] shrink-0" />
           {!collapsed && <span>People</span>}
         </Link>
@@ -127,7 +134,7 @@ function SidebarContent({ collapsed, onNavigate, userEmail, roles }: { collapsed
             </button>
           );
         })}
-        {roles.includes("super_admin") && <><div className="my-4 h-px bg-slate-200" />{!collapsed && <p className="mb-2 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">Administration</p>}<Link href="/settings/access" onClick={onNavigate} className={cn("relative flex h-9 w-full items-center rounded-lg text-sm transition",collapsed?"justify-center":"gap-3 px-2.5",pathname.startsWith("/settings/access")?"bg-indigo-50 font-medium text-indigo-700":"text-slate-600 hover:bg-slate-100 hover:text-slate-900")} title={collapsed?"Access control":undefined}><ShieldCheck className="size-[18px] shrink-0"/>{!collapsed&&<span>Access control</span>}</Link></>}
+        {roles.includes("super_admin") && <><div className="my-4 h-px bg-slate-200" />{!collapsed && <p className="mb-2 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">Administration</p>}<Link href="/settings/access" onClick={onNavigate} className={cn("relative flex h-9 w-full items-center rounded-lg text-sm transition",collapsed?"justify-center":"gap-3 px-2.5",pathname.startsWith("/settings/access")?"bg-indigo-50 font-medium text-indigo-700":"text-slate-600 hover:bg-slate-100 hover:text-slate-900")} title={collapsed?"Access control":undefined}><ShieldCheck className="size-[18px] shrink-0"/>{!collapsed&&<span>Access control</span>}</Link><Link href="/settings/payroll-policy" onClick={onNavigate} className={cn("relative mt-0.5 flex h-9 w-full items-center rounded-lg text-sm transition",collapsed?"justify-center":"gap-3 px-2.5",pathname.startsWith("/settings/payroll-policy")?"bg-indigo-50 font-medium text-indigo-700":"text-slate-600 hover:bg-slate-100 hover:text-slate-900")} title={collapsed?"Payroll policy":undefined}><SlidersHorizontal className="size-[18px] shrink-0"/>{!collapsed&&<span>Payroll policy</span>}</Link></>}
       </nav>
 
       {!collapsed && (
@@ -150,11 +157,12 @@ function SidebarContent({ collapsed, onNavigate, userEmail, roles }: { collapsed
   );
 }
 
-export function DashboardShell({ children, userEmail, roles = [] }: { children: React.ReactNode; userEmail?: string; roles?: string[] }) {
+export function DashboardShell({ children, userEmail, userInitials, userName, roles = [] }: { children: React.ReactNode; userEmail?: string; userInitials?: string; userName?: string; roles?: string[] }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [commandQuery, setCommandQuery] = useState("");
+  const [signOutOpen, setSignOutOpen] = useState(false);
   const filteredCommands = commandItems.filter((item) => isVisible(item, roles) && item.label.toLowerCase().includes(commandQuery.toLowerCase()));
 
   useEffect(() => {
@@ -224,9 +232,21 @@ export function DashboardShell({ children, userEmail, roles = [] }: { children: 
             <kbd className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] text-slate-400">⌘ K</kbd>
           </div>
           <div className="ml-auto flex items-center gap-1">
-            <div className="flex items-center gap-2"><span className="hidden max-w-[220px] truncate text-xs text-slate-600 sm:block">{userEmail ?? "Preview · not signed in"}</span>{userEmail ? <><Button asChild variant="ghost" size="icon"><Link href="/settings/profile" aria-label="Account settings"><Settings /></Link></Button><form action={signOut}><Button type="submit" variant="ghost" size="sm">Sign out</Button></form></> : <Button asChild variant="ghost" size="sm"><Link href="/login">Sign in</Link></Button>}</div>
+            {userEmail ? <DropdownMenu>
+              <DropdownMenuTrigger asChild><button type="button" aria-label="Open user menu" className="flex h-10 items-center gap-2 rounded-xl px-1.5 text-slate-600 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"><span aria-hidden="true" className="grid size-8 place-items-center rounded-full bg-indigo-600 text-xs font-semibold text-white">{userInitials ?? userEmail.slice(0,2).toUpperCase()}</span><ChevronDown className="hidden size-3.5 sm:block" /></button></DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-56">
+                <div className="px-2.5 py-2"><p className="truncate text-sm font-medium text-slate-900">{userName ?? userEmail}</p><p className="truncate text-xs text-slate-500">{userEmail}</p></div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild><Link href="/settings/profile"><Settings />Profile & settings</Link></DropdownMenuItem>
+                {roles.includes("super_admin") && <DropdownMenuItem asChild><Link href="/settings/access"><ShieldCheck />Access control</Link></DropdownMenuItem>}
+                {roles.includes("super_admin") && <DropdownMenuItem asChild><Link href="/settings/payroll-policy"><SlidersHorizontal />Payroll policy</Link></DropdownMenuItem>}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={() => setSignOutOpen(true)}><LogOut />Sign out</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu> : <Button asChild variant="ghost" size="sm"><Link href="/login">Sign in</Link></Button>}
           </div>
         </header>
+        <SignOutDialog open={signOutOpen} onOpenChange={setSignOutOpen} />
         <main className="mx-auto w-full max-w-[1600px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
       </div>
     </div>

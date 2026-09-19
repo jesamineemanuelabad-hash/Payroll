@@ -1,5 +1,5 @@
-import { ArrowLeft, LockKeyhole, ShieldCheck } from "lucide-react";
-import { signOut } from "@/app/actions/auth";
+import { LockKeyhole, ShieldCheck } from "lucide-react";
+import { SignOutConfirmation } from "@/components/auth/sign-out-confirmation";
 
 export function MfaShell({
   eyebrow,
@@ -17,7 +17,7 @@ export function MfaShell({
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(99,102,241,0.14),transparent_44%)]" />
       <div className="relative w-full max-w-lg">
         <div className="mb-5 flex items-center justify-between">
-          <form action={signOut}><button className="inline-flex items-center gap-2 text-xs font-medium text-slate-500 transition hover:text-indigo-600"><ArrowLeft className="size-3.5" />Sign out</button></form>
+          <SignOutConfirmation />
           <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-[11px] font-semibold text-emerald-700"><LockKeyhole className="size-3.5" />Protected session</span>
         </div>
         <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_28px_80px_-42px_rgba(15,23,42,0.45)]">

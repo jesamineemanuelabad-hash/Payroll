@@ -11,6 +11,7 @@ export async function scoreAttendanceWithXgboost(features: AttendanceFeature[]):
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify({ featureSchemaVersion: "attendance-v1", features }),
     cache: "no-store",
+    signal: AbortSignal.timeout(120_000),
   });
   if (!response.ok) throw new Error(`XGBoost scoring failed with status ${response.status}.`);
   const parsed = xgboostBatchResponseSchema.safeParse(await response.json());

@@ -132,5 +132,5 @@ export async function signOut() {
     if (error) throw new Error("Sign-out failed. Please try again.");
   }
   revalidatePath("/", "layout");
-  redirect("/login");
+  redirect("/login?signedOut=1");
 }

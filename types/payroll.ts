@@ -54,13 +54,15 @@ export type PayrollReportItem = {
   salaryFrequency: string; dailyRate: number; hourlyRate: number; workedDays: number; paidLeaveDays: number;
   lateMinutes: number; undertimeMinutes: number; absenceMinutes: number; overtimeMinutes: number;
   basicSalary: number; allowances: number; overtimePay: number; bonus: number; benefits: number; reimbursements: number; grossPay: number;
-  lateDeduction: number; undertimeDeduction: number; absenceDeduction: number; sssEmployee: number; philhealthEmployee: number;
+  ordinaryOvertimeMinutes: number; restDayOvertimeMinutes: number; specialDayOvertimeMinutes: number; regularHolidayOvertimeMinutes: number; doubleHolidayOvertimeMinutes: number;
+  nightMinutes: number; nightDifferential: number;
+  lateDeduction: number; undertimeDeduction: number; absenceDeduction: number; sssEmployee: number; philhealthEmployee: number; pagibigEmployee: number;
   withholdingTax: number; benefitDeduction: number; otherDeductions: number; totalDeductions: number;
-  sssEmployer: number; philhealthEmployer: number; benefitEmployer: number; employerContributions: number; netPay: number; status: string;
+  sssEmployer: number; philhealthEmployer: number; pagibigEmployer: number; benefitEmployer: number; employerContributions: number; netPay: number; status: string;
 };
 
 export type PayrollRunReport = {
-  run: { id: string; period_start: string; period_end: string; pay_date: string; preparation_date: string; schedule: string; status: PayrollStatus; employee_count: number; total_gross: number; total_deductions: number; total_contributions: number; total_net: number; calculated_at: string | null; rule_version: string | null };
+  run: { id: string; period_start: string; period_end: string; pay_date: string; preparation_date: string; schedule: string; status: PayrollStatus; employee_count: number; total_gross: number; total_deductions: number; total_contributions: number; total_net: number; calculated_at: string | null; rule_version: string | null; policy_name?: string; policy_version?: string; validation_status?: string; validated_at?: string | null; locked_at?: string | null };
   items: PayrollReportItem[];
 };
 

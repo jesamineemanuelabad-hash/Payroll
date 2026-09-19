@@ -121,7 +121,7 @@ export function OverviewDashboard({ initialData }: { initialData: LiveDashboardD
   const period = readiness ? `${readiness.periodStart} – ${readiness.periodEnd}` : "No payroll period";
   const stages: Array<{ label: string; value: number | string; helper: string; icon: typeof UsersRound; href: Route; complete: boolean }> = [
     { label: "Attendance", value: data.attendance.total, helper: "saved records", icon: Fingerprint, href: "/payroll-benefits/attendance", complete: data.attendance.total > 0 },
-    { label: "Employees", value: data.summary.employeeCount, helper: "active workforce", icon: UsersRound, href: "/payroll-benefits/attendance", complete: data.summary.employeeCount > 0 },
+    { label: "Employees", value: data.summary.employeeCount, helper: "active workforce", icon: UsersRound, href: "/payroll-benefits/people", complete: data.summary.employeeCount > 0 },
     { label: "Calculated", value: readiness?.employeeCount ?? 0, helper: "payroll entries", icon: Banknote, href: "/payroll-benefits/payroll", complete: Boolean(readiness?.employeeCount) },
     { label: "Exceptions", value: readiness?.exceptions ?? 0, helper: "need review", icon: FileCheck2, href: "/payroll-benefits/payroll", complete: Boolean(readiness && readiness.exceptions === 0) },
     { label: "Payment", value: readiness?.payDate ?? "—", helper: readiness?.status.replaceAll("_", " ") ?? "not scheduled", icon: CalendarDays, href: readiness ? `/payroll-benefits/payroll/${readiness.id}` as Route : "/payroll-benefits/payroll", complete: readiness?.status === "paid" },

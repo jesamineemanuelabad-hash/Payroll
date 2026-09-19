@@ -9,6 +9,8 @@ export const dynamic = "force-dynamic";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   let email: string | undefined;
+  let initials: string | undefined;
+  let userName: string | undefined;
   let roles: string[] = [];
   if (hasSupabaseEnvironment()) {
     const db = await createSupabaseServerClient();
@@ -22,7 +24,9 @@ export default async function DashboardLayout({ children }: { children: React.Re
     const securityDestination = mfaDestination(workspace.roles, assurance);
     if (securityDestination) redirect(securityDestination);
     email = workspace.email ?? data.user.email;
+    userName = [workspace.firstName, workspace.lastName].filter(Boolean).join(" ") || undefined;
+    initials = `${workspace.firstName?.[0] ?? ""}${workspace.lastName?.[0] ?? ""}`.toUpperCase() || email?.slice(0, 2).toUpperCase();
     roles = workspace.roles;
   }
-  return <DashboardShell userEmail={email} roles={roles}>{children}</DashboardShell>;
+  return <DashboardShell userEmail={email} userName={userName} userInitials={initials} roles={roles}>{children}</DashboardShell>;
 }

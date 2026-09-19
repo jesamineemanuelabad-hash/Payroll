@@ -10,7 +10,7 @@ import type { PayrollStatus } from "@/types/payroll";
 export default async function PayrollRunPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   if (!z.string().uuid().safeParse(id).success) notFound();
-  let run: { status: PayrollStatus; calculated_at: string | null; employee_count: number } = { status: "draft", calculated_at: null, employee_count: 0 };
+  let run: { status: PayrollStatus; calculated_at: string | null; employee_count: number; validation_status?: string } = { status: "draft", calculated_at: null, employee_count: 0, validation_status: "not_run" };
   let roles: string[] = [];
   if (hasSupabaseEnvironment()) {
     const result = await readRecords({ entity: "payroll_runs", id });
@@ -21,5 +21,5 @@ export default async function PayrollRunPage({ params }: { params: Promise<{ id:
     const roleResult = await db.rpc("record_roles", {});
     roles = roleResult.data ?? [];
   }
-  return <div><Link href="/payroll-benefits/payroll" className="text-sm font-medium text-indigo-600">← Back to payroll runs</Link><PayrollRunActions runId={id} status={run.status} calculatedAt={run.calculated_at} employeeCount={run.employee_count} roles={roles} /><RecordPage entityKeys={["payroll_items"]} parent={id} /></div>;
+  return <div><Link href="/payroll-benefits/payroll" className="text-sm font-medium text-indigo-600">← Back to payroll runs</Link><PayrollRunActions runId={id} status={run.status} calculatedAt={run.calculated_at} employeeCount={run.employee_count} validationStatus={run.validation_status} roles={roles} /><RecordPage entityKeys={["payroll_items"]} parent={id} /></div>;
 }

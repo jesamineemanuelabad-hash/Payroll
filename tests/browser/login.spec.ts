@@ -6,6 +6,13 @@ test("signed-out landing page hides the dashboard shortcut", async ({ page }) =>
   await expect(page.getByRole("link", { name: "Open dashboard", exact: true })).toHaveCount(0);
 });
 
+test("logout confirmation redirect shows a success message", async ({ page }) => {
+  await page.goto("/login?signedOut=1");
+  await expect(page.getByText("Signed out securely", { exact: true })).toBeVisible();
+  await expect(page.getByText(/secure workspace session has ended/i)).toBeVisible();
+  await expect(page).toHaveURL(/\/login$/);
+});
+
 test("login module previews respond to selection", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto("/login");

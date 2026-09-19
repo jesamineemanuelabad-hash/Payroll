@@ -16,7 +16,9 @@ Apply these files in order in the Supabase SQL editor (or your migration pipelin
 8. `supabase/migrations/202609060005_rbac_management.sql`
 9. `supabase/migrations/202609060006_operational_workflows.sql`
 10. `supabase/migrations/202609060007_multi_factor_authentication.sql`
-11. `supabase/seed.sql` (optional department/provider/plan catalog)
+11. `supabase/migrations/202609150001_automatic_attendance_scoring.sql`
+12. `supabase/migrations/202609190001_configurable_payroll_policy.sql`
+13. `supabase/seed.sql` (optional department/provider/plan catalog)
 
 Apply only migrations that have not already run. Do not rerun existing migrations. Back up any existing live data before changing its schema. The CRUD migration restricts authenticated direct table writes; application writes use validated RPCs. The operational workflow migration immediately denies terminated profiles at the database layer and adds payroll state transitions plus automatic compensation application.
 
@@ -82,7 +84,8 @@ Suggested creation order:
 3. Benefit providers → Plans → Employee benefits.
 4. Claims → submit → review document link → verify → approve or reject.
 5. Leave approvals → submit requests → approve paid leave.
-6. Payroll runs → create a 1st-cutoff, 2nd-cutoff, or monthly period → Open entries → Calculate payroll → review → export Excel or print payslips.
+6. Payroll policy → review the default and create a company-approved effective-dated version.
+7. Payroll runs → create a 1st-cutoff, 2nd-cutoff, or monthly period → Open entries → Calculate payroll → validate → review → export Excel or print payslips.
 
 Each record module supports create, detail view, edit, confirmed delete, search, server pagination, CSV/Excel export across matching pages, and audit history for its permitted editor roles. Foreign-key selectors support searching beyond the first page. Mutation functions enforce version checks, field allowlists, role authorization, and transactions.
 
@@ -96,19 +99,19 @@ Payroll is normally prepared two days before payday; the run stores that prepara
 
 When **Calculate payroll** runs, the database locks the draft and includes active payroll employees with an effective compensation record. Monthly and semi-monthly employees receive the applicable period share. Daily employees receive the daily rate for recorded worked days plus approved paid weekdays; hourly employees receive recorded worked hours plus paid-leave hours. Approved paid leave prevents absence deduction for fixed-salary employees. Saturdays and Sundays are excluded from automatically counted paid-leave days.
 
-Late and undertime deductions are `hourly rate × minutes ÷ 60`. Absence deductions for fixed-salary employees are `daily rate × absence minutes ÷ 480`. Ordinary-workday overtime is `hourly rate × overtime minutes ÷ 60 × 125%`. Holiday, special-day, and rest-day premium multipliers require a configured work/holiday calendar and remain a reviewed adjustment until that integration exists. Undertime never offsets overtime.
+Late and undertime deductions are `hourly rate × minutes ÷ 60`. Absence deductions for fixed-salary employees use the policy workday length. Overtime uses the reviewed attendance work-day type and its effective policy multiplier: ordinary, rest day, special non-working day, regular holiday, or double holiday. Night minutes add the configured differential. Automatic public-holiday calendar synchronization remains an external integration. Undertime never offsets overtime.
 
-SSS uses the January 2025 contribution schedule: employee 5% and employer 10% of monthly salary credit from ₱5,000 through ₱35,000, with employer EC. PhilHealth uses the 2025 5% premium with ₱10,000 floor and ₱100,000 ceiling, split into employee and employer shares. The engine applies half of monthly SSS/PhilHealth to each semi-monthly cutoff and the full amount to a monthly run. BIR withholding uses the Annex E semi-monthly or monthly table effective January 1, 2023. Taxable periodic compensation includes basic pay, allowances, ordinary overtime, and bonus, less employee SSS and PhilHealth; approved expense reimbursements are excluded.
+The seeded policy uses the January 2025 SSS rates (employee 5%, employer 10%, ₱5,000–₱35,000 MSC plus employer EC), PhilHealth 5% with a ₱10,000 floor and ₱100,000 ceiling, and Pag-IBIG employee/employer rates with a ₱10,000 compensation cap. BIR withholding uses Annex E effective January 1, 2023. Contribution allocation can be split evenly or assigned to either cutoff. Taxable periodic compensation includes basic pay, allowances, overtime, night differential, and bonus, less employee mandatory contributions; approved expense reimbursements are excluded.
 
-Each employee entry itemizes late minutes and deduction, undertime, absence, SSS, PhilHealth, BIR withholding, benefit costs, and other authorized deductions. Gross pay, total deductions, employer contributions, and net pay are recomputed transactionally. Approved claims not already linked to payroll are included as reimbursements and linked to the run. The saved calculation snapshot records the rule version and principal assumptions. A recalculation preserves the reviewed bonus and other authorized deduction fields.
+Each employee entry itemizes late, undertime, absence, categorized overtime, night differential, SSS, PhilHealth, Pag-IBIG, BIR withholding, benefit costs, and other authorized deductions. Gross pay, total deductions, employer contributions, and net pay are recomputed transactionally. Approved claims not already linked to payroll are included as reimbursements and linked to the run. The saved calculation snapshot records the exact effective policy. A recalculation preserves reviewed bonuses and other authorized deductions.
 
-After calculation, payroll staff review exceptions and itemized payslips, then use the existing controlled status workflow for approval and payment. Non-draft payroll is immutable. The print route generates an A4 payroll register followed by one payslip per employee; the browser print dialog can print or save PDF. The Excel export contains the detailed employee register.
+Calculation automatically runs pre-approval validation. Optional comparison cases check results against anonymized historical payslip totals using the policy tolerance. Payroll cannot be submitted until blocking issues and failed comparisons are resolved. Approved payroll stores a lock timestamp and non-draft entries are immutable. The print route generates an A4 register followed by one payslip per employee; the browser can print or save PDF. Excel contains the detailed employee register.
 
 This release does not disburse payments, upload documents, or automatically update rules after a government announcement. Claim document review uses a saved HTTPS URL. Before production, a Philippine payroll professional should confirm the configured rule version, contribution-cutoff policy, taxable benefits, work schedule, and company rounding policy.
 
 Overview and HR Analytics use the authenticated `dashboard_snapshot` RPC and export the currently filtered live snapshot. The protected system-owner identity is excluded from workforce counts and every employee-linked operation. Missing configuration or failed queries are shown as errors; the dashboards never fall back to demo metrics.
 
-To enable the **Run XGBoost** action, configure `XGBOOST_SERVICE_URL` and `XGBOOST_SERVICE_TOKEN` in the server environment. The service must implement `POST /v1/attendance/predict` using the contract in `lib/analytics/xgboost-contract.ts`. The action sends validated features for the last 30 days, validates the response, and persists a versioned model run and predictions. Model results are review signals and never directly change payroll.
+To enable automatic AI analysis, configure `XGBOOST_SERVICE_URL` and `XGBOOST_SERVICE_TOKEN` in the server environment. The service must implement `POST /v1/attendance/predict` using the contract in `lib/analytics/xgboost-contract.ts`. Opening HR Analytics checks the last 30 days of attendance, claims a database lease if inputs changed (or the last scoring is more than a day old), then persists a versioned model run and predictions. Concurrent visitors do not duplicate scoring; failures retry after 15 minutes. This is on-visit automatic scoring, not an unattended background schedule. A configured scoring service and a signed-in super/HR administrator with MFA are still required. Model results are review signals and never directly change payroll.
 
 ## 5. Verification
 
