@@ -51,6 +51,7 @@ export async function saveRecord(input: unknown): Promise<Result<RecordRow>> {
   const parsed = z.object({ entity: z.string().refine((key) => Object.hasOwn(entities, key)), id: z.string().uuid().optional(), version: z.string().datetime({ offset: true }).optional(), values: z.record(z.string(), z.unknown()) }).strict().safeParse(input);
   if (!parsed.success) return { ok: false, message: "Invalid record request." };
   const { entity, id, version, values } = parsed.data;
+  if (entity === "profiles" && !id) return { ok: false, message: "Employees are owned by HR2. Use Sync with HR2 instead of creating an employee manually." };
   const validated = recordSchema(entity, !id).safeParse(values);
   if (!validated.success) return { ok: false, message: "Review the highlighted fields.", fields: validated.error.flatten().fieldErrors as Record<string, string[]> };
   return mutate(entity, id ? "update" : "create", validated.data as Json, id, version);

@@ -18,7 +18,8 @@ Apply these files in order in the Supabase SQL editor (or your migration pipelin
 10. `supabase/migrations/202609060007_multi_factor_authentication.sql`
 11. `supabase/migrations/202609150001_automatic_attendance_scoring.sql`
 12. `supabase/migrations/202609190001_configurable_payroll_policy.sql`
-13. `supabase/seed.sql` (optional department/provider/plan catalog)
+13. `supabase/migrations/202609220001_hr2_finance_workflows.sql`
+14. `supabase/seed.sql` (optional department/provider/plan catalog)
 
 Apply only migrations that have not already run. Do not rerun existing migrations. Back up any existing live data before changing its schema. The CRUD migration restricts authenticated direct table writes; application writes use validated RPCs. The operational workflow migration immediately denies terminated profiles at the database layer and adds payroll state transitions plus automatic compensation application.
 
@@ -53,7 +54,7 @@ values ('REPLACE-WITH-AUTH-USER-UUID'::uuid, 'super_admin');
 commit;
 ```
 
-Both bootstrap methods are trusted administrative operations. The `/setup` form requires the private server token and closes after the first admin. For subsequent employees, create their Auth users first, then create profiles through **Employee & Attendance → Employees**. Deleting a profile does not delete its Authentication account. Deactivate employment or use the Auth dashboard when login access must also be revoked.
+Both bootstrap methods are trusted administrative operations. The `/setup` form requires the private server token and closes after the first admin. Subsequent payroll employee profiles come from **Time & Attendance → Sync with HR2**; manual profile creation is disabled. If an employee also needs application access, invite or link their Authentication account through the controlled access workflow used by the HR2 integration. Deleting a profile does not delete its Authentication account. Deactivate employment or use the Auth dashboard when login access must also be revoked.
 
 After applying the RBAC migration, a super administrator can manage users from **Account settings → Access control**. The trusted SQL editor remains an emergency administrative option:
 
@@ -77,17 +78,17 @@ An account without a profile/role may sign in but cannot create records. RLS lim
 
 Restart `npm run dev` after changing environment variables. Open `/login` and sign in.
 
-Suggested creation order:
+Suggested operational order:
 
-1. Departments → Employees → Attendance.
+1. Departments → **Sync with HR2** → review synchronized Employees and Attendance. Manual employee creation is disabled because HR2 owns the employee master data.
 2. Compensation cycles → Salary proposals; maintain effective salary history separately.
 3. Benefit providers → Plans → Employee benefits.
-4. Claims → submit → review document link → verify → approve or reject.
+4. Claims → Pending → Under Review → Finance Approval → Approved/Rejected → Paid.
 5. Leave approvals → submit requests → approve paid leave.
 6. Payroll policy → review the default and create a company-approved effective-dated version.
 7. Payroll runs → create a 1st-cutoff, 2nd-cutoff, or monthly period → Open entries → Calculate payroll → validate → review → export Excel or print payslips.
 
-Each record module supports create, detail view, edit, confirmed delete, search, server pagination, CSV/Excel export across matching pages, and audit history for its permitted editor roles. Foreign-key selectors support searching beyond the first page. Mutation functions enforce version checks, field allowlists, role authorization, and transactions.
+Each applicable record module supports create, detail view, edit, confirmed delete, search, server pagination, CSV/Excel export across matching pages, and audit history for its permitted editor roles. Employees are the exception: profiles are synchronized from HR2 and cannot be created manually in Payroll & Benefits. Foreign-key selectors support searching beyond the first page. Mutation functions enforce version checks, field allowlists, role authorization, and transactions.
 
 New claims and compensation proposals must start as drafts and be submitted before an approval decision. Self-approval is blocked. Compensation approval requires a reviewer other than the submitter. Approved claims/proposals, payroll-linked benefits, and non-draft payroll are protected from edits/deletes. Only draft claims/proposals may be deleted. References can prevent deletion; a compensation cycle with reviews and a payroll run with entries cannot be deleted until the permitted child records are removed. Audit history survives deletion; use the trusted SQL editor to inspect deleted-record events.
 

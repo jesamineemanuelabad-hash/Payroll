@@ -13,7 +13,7 @@ export async function synchronizeEssRecords(): Promise<EssSyncResult> {
   const { data: auth } = await db.auth.getUser();
   if (!auth.user) return { ok: false, message: "Sign in before synchronization." };
   const { data: roles, error } = await db.rpc("record_roles", {});
-  if (error || !roles?.some((role) => ["super_admin", "hr_admin", "payroll_manager"].includes(role))) return { ok: false, message: "Your role cannot synchronize records." };
+  if (error || !roles?.some((role) => ["super_admin", "hr_admin", "payroll_manager"].includes(role))) return { ok: false, message: "Your role cannot synchronize HR2 records." };
   const { data: assurance, error: assuranceError } = await db.auth.mfa.getAuthenticatorAssuranceLevel();
   if (assuranceError || assurance.currentLevel !== "aal2") return { ok: false, message: "Complete multi-factor authentication before synchronizing ESS records." };
   const endpoint = process.env.ESS_SYNC_WEBHOOK_URL;
@@ -23,11 +23,11 @@ export async function synchronizeEssRecords(): Promise<EssSyncResult> {
   }
   try {
     const response = await fetch(endpoint, { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ scopes: ["employees", "attendance", "compensation", "approved_requests"] }), cache: "no-store" });
-    if (!response.ok) return { ok: false, message: `ESS synchronization failed with status ${response.status}.` };
+    if (!response.ok) return { ok: false, message: `HR2 synchronization failed with status ${response.status}.` };
     const parsed = syncResponseSchema.safeParse(await response.json());
-    if (!parsed.success) return { ok: false, message: "ESS returned an unexpected synchronization response." };
+    if (!parsed.success) return { ok: false, message: "HR2 returned an unexpected synchronization response." };
     return { ok: true, demo: false, counts: parsed.data };
   } catch {
-    return { ok: false, message: "The ESS integration service could not be reached." };
+    return { ok: false, message: "The HR2 integration service could not be reached." };
   }
 }

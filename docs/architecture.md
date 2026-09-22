@@ -24,7 +24,7 @@ Authorization is enforced in PostgreSQL with helper functions and row-level poli
 
 The complete migration, indexes, constraints, trigger functions, and RLS policies are in `supabase/migrations/202608280001_initial_payroll_benefits.sql`.
 
-ESS integration and attendance intelligence are isolated behind server-only contracts. The ESS synchronization webhook retrieves employees, attendance, effective compensation, and approved requests; PostgreSQL stores source cursors and idempotent adjustment records. XGBoost receives a versioned attendance feature payload and returns classifications plus anomaly scores. Predictions are review signals only and never mutate payroll without an approved `payroll_adjustments` record. The extension schema and RLS policies are in `supabase/migrations/202608300001_ess_attendance_analytics.sql`.
+HR2 integration and attendance intelligence are isolated behind server-only contracts. The HR2 synchronization webhook retrieves employees, attendance, effective compensation, and approved requests; PostgreSQL stores source cursors and idempotent adjustment records. Payroll & Benefits does not permit manual employee creation because HR2 owns the employee master data. XGBoost receives a versioned attendance feature payload and returns classifications plus anomaly scores. Predictions are review signals only and never mutate payroll without an approved `payroll_adjustments` record. The extension schema and RLS policies are in `supabase/migrations/202608300001_ess_attendance_analytics.sql`.
 
 ## 3. Folder structure
 
@@ -69,4 +69,4 @@ Pages load their initial data through authenticated Server Components and permis
 - `AccessControl`: invitation, roles, manager scope, payroll eligibility, and Auth-backed account activation.
 - `OverviewDashboard` / `HrAnalyticsDashboard`: live aggregate reporting and model-scoring controls.
 
-ESS persistence and XGBoost execution remain server-only integration boundaries. Bank disbursement, uploads, Pag-IBIG/loans, and holiday/rest-day calendars require separate reviewed integrations or rule migrations.
+HR2 persistence and XGBoost execution remain server-only integration boundaries. Bank disbursement, uploads, Pag-IBIG/loans, and holiday/rest-day calendars require separate reviewed integrations or rule migrations.

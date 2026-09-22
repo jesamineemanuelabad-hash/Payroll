@@ -33,7 +33,7 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       alter default privileges in schema public grant all on tables to authenticated,anon;
       alter default privileges in schema public grant usage,select on sequences to authenticated;
     `);
-    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql", "202609150001_automatic_attendance_scoring.sql", "202609190001_configurable_payroll_policy.sql"]) {
+    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql", "202609150001_automatic_attendance_scoring.sql", "202609190001_configurable_payroll_policy.sql", "202609220001_hr2_finance_workflows.sql"]) {
       // PGlite includes gen_random_uuid in core, but not the optional pgcrypto extension.
       const sql = (await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8")).replace("create extension if not exists pgcrypto;", "");
       await db.exec(sql);
@@ -138,12 +138,16 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       await as(admin);
       await db.query("select public.admin_update_user_access($1,array['employee'],array[]::uuid[],true,'active')",[outsider]);
     });
-    await t.test("employee CRUD uses an existing Auth account and does not delete that account", async () => {
+    await t.test("manual employee creation is blocked while HR2-synchronized profiles remain editable", async () => {
       const id = "00000000-0000-4000-8000-000000000005";
       await db.exec("reset role");
       await db.query("insert into auth.users(id) values ($1)", [id]);
       await as(admin);
-      const row = await create("profiles", { id, employee_number: "NEW", first_name: "New", last_name: "Employee", email: "new@example.com", job_title: "Analyst", department_id: created.departments.id });
+      await assert.rejects(create("profiles", { id, employee_number: "NEW", first_name: "New", last_name: "Employee", email: "new@example.com", job_title: "Analyst", department_id: created.departments.id }), /synchronized from HR2/i);
+      await db.exec("reset role");
+      const inserted=await db.query<Row>("insert into public.profiles(id,employee_number,first_name,last_name,email,job_title,department_id,is_payroll_employee) values ($1,'NEW','New','Employee','new@example.com','Analyst',$2,true) returning *",[id,created.departments.id]);
+      const row=inserted.rows[0];
+      await as(admin);
       const saved = await update("profiles", row, { job_title: "Senior Analyst" });
       assert.equal((await read("profiles", row.id)).rows[0].job_title, "Senior Analyst");
       await remove("profiles", saved);
@@ -180,22 +184,28 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
     await t.test("compensation cycles and draft proposals support CRUD", async () => {
       created.compensation_cycles = await create("compensation_cycles", { name: "Review", starts_on: "2026-09-01", ends_on: "2026-09-30", budget: 100000 });
       created.compensation_cycles = await update("compensation_cycles", created.compensation_cycles, { budget: 110000 });
-      created.compensation_reviews = await create("compensation_reviews", { employee_id: worker, cycle_id: created.compensation_cycles.id, current_salary: 30000, proposed_salary: 33000, status: "draft" });
+      created.compensation_reviews = await create("compensation_reviews", { employee_id: worker, cycle_id: created.compensation_cycles.id, current_salary: 30000, proposed_salary: 33000, bonus: 0, effective_date: "2026-11-01", justification: "Planning", status: "draft" });
       created.compensation_reviews = await update("compensation_reviews", created.compensation_reviews, { proposed_salary: 36000 });
       assert.equal((await read("compensation_reviews")).rows[0].increase_percentage, 20);
     });
-    await t.test("approved compensation creates salary history automatically", async () => {
+    await t.test("HR and Finance compensation workflow checks budget before implementation", async () => {
       const cycle=await create("compensation_cycles",{name:"Approved Review",starts_on:"2026-09-01",ends_on:"2026-09-30",budget:50000,status:"draft"});
-      const proposal=await create("compensation_reviews",{employee_id:worker,cycle_id:cycle.id,current_salary:32000,proposed_salary:35000,bonus:1000,justification:"Approved adjustment",status:"draft"});
-      const submitted=await update("compensation_reviews",proposal,{status:"submitted"});
+      const proposal=await create("compensation_reviews",{employee_id:worker,cycle_id:cycle.id,current_salary:32000,proposed_salary:35000,bonus:1000,effective_date:"2026-10-01",justification:"Approved adjustment",status:"draft"});
+      assert.equal(proposal.adjustment_amount,3000); assert.equal(proposal.within_budget,true);
+      const pending=await update("compensation_reviews",proposal,{status:"pending"});
       await as(reviewer);
-      const approved=await update("compensation_reviews",submitted,{status:"approved"});
-      assert.ok(approved.applied_at);
+      const hrReview=await update("compensation_reviews",pending,{status:"hr_review"});
+      const financeReview=await update("compensation_reviews",hrReview,{status:"finance_review"});
+      await assert.rejects(update("compensation_reviews",financeReview,{status:"approved"}),/Finance review permission/i);
+      await as(admin);
+      const approved=await update("compensation_reviews",financeReview,{status:"approved"});
+      assert.equal(approved.applied_at,null);
+      const implemented=await update("compensation_reviews",approved,{status:"implemented"});
+      assert.ok(implemented.applied_at);
       const salary=await db.query<{base_salary:string;effective_from:Date;source:string}>("select base_salary,effective_from,source from public.employee_compensation_history where source_review_id=$1",[proposal.id]);
       assert.equal(Number(salary.rows[0].base_salary),35000);
       assert.equal(salary.rows[0].effective_from.toISOString().slice(0,10),"2026-10-01");
       assert.equal(salary.rows[0].source,"compensation_review");
-      await as(admin);
     });
     await t.test("benefit providers, all plan categories, and enrollments persist", async () => {
       created.benefit_providers = await create("benefit_providers", { name: "Test Provider" });
@@ -208,16 +218,18 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       assert.equal((await read("employee_benefits")).rows[0].status, "active");
     });
     await t.test("claims CRUD validates review and preserves approved records", async () => {
-      created.claims = await create("claims", { employee_id: worker, claim_number: "CLM-1", category: "medical", description: "Receipt", amount: 500, status: "draft" });
-      created.claims = await update("claims", created.claims, { amount: 600 });
-      const decision = await create("claims", { employee_id: worker, claim_number: "CLM-APPROVAL", category: "medical", description: "Decision", amount: 500, status: "draft" });
-      await assert.rejects(update("claims", decision, { status: "approved" }), /Submit/);
-      const submitted = await update("claims", decision, { status: "submitted" });
-      await assert.rejects(update("claims", submitted, { status: "approved" }), /Verify/);
-      const approved = await update("claims", submitted, { receipt_url: "https://example.com/receipt.pdf", verification_status: "verified", status: "approved" });
-      assert.equal(approved.approver_id, admin);
-      await assert.rejects(remove("claims", approved), /read-only/);
-      await assert.rejects(update("claims", approved, { amount: 1 }), /read-only/);
+      created.claims = await create("claims", { employee_id: worker, claim_number: "CLM-1", category: "medical", expense_date:"2026-09-02", description: "Receipt", requested_amount: 500, approved_amount: 0, status: "draft" });
+      created.claims = await update("claims", created.claims, { requested_amount: 600 });
+      const decision = await create("claims", { employee_id: worker, claim_number: "CLM-APPROVAL", category: "transportation", expense_date:"2026-09-03", description: "Company travel", requested_amount: 2500, approved_amount: 2000, status: "draft" });
+      await assert.rejects(update("claims", decision, { status: "approved" }), /Invalid claim transition/);
+      const pending = await update("claims", decision, { status: "pending" });
+      const reviewed = await update("claims", pending, { status: "under_review" });
+      const finance = await update("claims", reviewed, { receipt_url: "https://example.com/receipt.pdf", verification_status: "verified", status: "finance_approval" });
+      const approved = await update("claims", finance, { status: "approved" });
+      assert.equal(approved.approver_id, admin); assert.equal(approved.amount,2000); assert.equal(approved.requested_amount,2500);
+      await assert.rejects(remove("claims", approved), /Only drafts|read-only/);
+      const paid=await update("claims",approved,{status:"paid"});
+      assert.ok(paid.paid_at);
     });
     await t.test("payroll run/item CRUD calculates totals transactionally and rejects negative net", async () => {
       created.payroll_runs = await create("payroll_runs", { period_start: "2026-09-01", period_end: "2026-09-15", pay_date: "2026-09-20" });

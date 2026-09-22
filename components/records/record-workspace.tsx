@@ -99,6 +99,7 @@ function RecordEditor({ entity, row, parent, close, saved }: { entity: string; r
 function RecordGrid({ entity, roles, configured, setupError, parent }: Omit<Props, "entityKeys"> & { entity: string }) {
   const config = entities[entity];
   const canWrite = configured && roles.some((role) => config.roles.includes(role));
+  const canCreate = canWrite && config.allowCreate !== false;
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [count, setCount] = useState(0);
   const [page, setPage] = useState(0);
@@ -129,8 +130,25 @@ function RecordGrid({ entity, roles, configured, setupError, parent }: Omit<Prop
   }, [configured, entity, page, parent, query]);
   useEffect(() => { void refresh(); const tracker = generation; return () => { tracker.current++; }; }, [refresh]);
   useEffect(() => {
+    if (!["profiles", "attendance_records", "employee_compensation_history", "leave_requests"].includes(entity)) return;
+    const synced = () => { setPage(0); setQuery(""); setSearch(""); void refresh(); };
+    window.addEventListener("hr2-sync-complete", synced);
+    return () => window.removeEventListener("hr2-sync-complete", synced);
+  }, [entity, refresh]);
+  useEffect(() => {
     let active = true;
-    const references = config.fields.filter((field) => field.reference);
+    const referenceOverrides: Record<string, string> = {
+      reviewer_id: "profiles",
+      finance_approver_id: "profiles",
+      approver_id: "profiles",
+      approved_by: "profiles",
+      hr_reviewer_id: "profiles",
+      finance_reviewer_id: "profiles",
+    };
+    const references = [
+      ...config.fields.filter((field) => field.reference),
+      ...config.columns.filter((key) => referenceOverrides[key] && !config.fields.some((field) => field.key === key)).map((key) => ({ key, reference: referenceOverrides[key] } as Field)),
+    ];
     const requests = references.map((field) => ({ entity: field.reference!, ids: [...new Set(rows.map((row) => row[field.key]).filter(Boolean).map(String))] }));
     resolveRecordLabels(requests).then((entries) => { if (active) setLabels(entries); }).catch(() => { if (active) setLabels({}); });
     return () => { active = false; };
@@ -140,7 +158,7 @@ function RecordGrid({ entity, roles, configured, setupError, parent }: Omit<Prop
     if (labels[String(value)]) return labels[String(value)];
     if (typeof value === "number") return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
     if (typeof value === "boolean") return value ? "Yes" : "No";
-    if (key === "time_in" || key === "time_out") return new Date(String(value)).toLocaleString();
+    if (key === "time_in" || key === "time_out" || key.endsWith("_at")) return new Date(String(value)).toLocaleString();
     return String(value).replaceAll("_", " ");
   }
   async function remove() {
@@ -191,7 +209,8 @@ function RecordGrid({ entity, roles, configured, setupError, parent }: Omit<Prop
     finally { setExporting(false); }
   }
 
-  return <section className="mt-5 space-y-5"><div className="flex flex-col justify-between gap-4 sm:flex-row"><div><h2 className="text-xl font-semibold text-slate-950">{config.title}</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{config.description}</p></div><Button onClick={() => setEditor({ row: null })} disabled={!canWrite}><Plus />Create {config.singular}</Button></div>
+  return <section className="mt-5 space-y-5"><div className="flex flex-col justify-between gap-4 sm:flex-row"><div><h2 className="text-xl font-semibold text-slate-950">{config.title}</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{config.description}</p></div>{canCreate && <Button onClick={() => setEditor({ row: null })}><Plus />Create {config.singular}</Button>}</div>
+    {config.createNotice && <p className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900">{config.createNotice}</p>}
     {!configured && <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Database not connected. Set the Supabase environment variables, apply all migrations, and sign in to create and manage records. Saves are disabled until setup is complete.</p>}
     {configured && !canWrite && <p className="rounded-xl border bg-slate-50 p-4 text-sm text-slate-600">Read-only access. Your account can view records permitted by its database role.</p>}
     <div className="overflow-hidden rounded-xl border bg-white"><div className="flex flex-wrap items-center gap-2 border-b p-4"><form onSubmit={(event) => { event.preventDefault(); setPage(0); setQuery(search.trim()); }} className="flex min-w-0 flex-1 gap-2"><Input aria-label="Search records" maxLength={200} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search records…" className="max-w-xs" /><Button type="submit" variant="secondary" disabled={!configured}><Search /><span className="sr-only sm:not-sr-only">Search</span></Button></form><Button variant="secondary" onClick={refresh} disabled={!configured || loading} aria-label="Refresh records"><RefreshCw className={loading ? "animate-spin" : ""} /></Button><Button variant="secondary" disabled={!configured || exporting || Boolean(error)} onClick={() => exportAll(false)}><Download />CSV</Button><Button variant="secondary" disabled={!configured || exporting || Boolean(error)} onClick={() => exportAll(true)}><FileSpreadsheet />{exporting ? "Exporting…" : "Excel"}</Button></div>

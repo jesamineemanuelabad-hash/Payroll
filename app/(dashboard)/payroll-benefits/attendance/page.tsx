@@ -10,5 +10,5 @@ export default async function Page() {
     const { data: roles } = await db.rpc("record_roles", {});
     canSynchronize = Boolean(roles?.some((role) => ["super_admin", "hr_admin", "payroll_manager"].includes(role)));
   }
-  return <div><OperationsPageHeader eyebrow="Employee & Attendance" title="Employee and attendance operations" description="Maintain employee, time, leave, and department records. Authorized users can retrieve the latest employee, attendance, compensation, and approved-request data from ESS." actions={canSynchronize ? <SyncButton /> : undefined} /><RecordPage entityKeys={modules.attendance} /></div>;
+  return <div><OperationsPageHeader eyebrow="Time & Attendance" title="HR2 time and attendance synchronization" description="Employee master data comes from HR2. Synchronize employees, attendance, effective compensation, and approved requests; imported records appear in the tabs immediately." actions={canSynchronize ? <SyncButton label="Sync with HR2" /> : undefined} /><RecordPage entityKeys={modules.attendance} /></div>;
 }

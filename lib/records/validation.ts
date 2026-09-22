@@ -40,7 +40,9 @@ export function recordSchema(entity: string, creating: boolean) {
       if (!valid) ctx.addIssue({ code: "custom", path: ["period_end"], message: "Use the 1st–15th, 16th–month end, or a complete calendar month." });
     }
     if (entity === "claims") {
-      if (Number(values.amount) <= 0) ctx.addIssue({ code: "custom", path: ["amount"], message: "Amount must be greater than zero." });
+      if (Number(values.requested_amount) <= 0) ctx.addIssue({ code: "custom", path: ["requested_amount"], message: "Requested amount must be greater than zero." });
+      if (Number(values.approved_amount) < 0) ctx.addIssue({ code: "custom", path: ["approved_amount"], message: "Approved amount cannot be negative." });
+      if (Number(values.approved_amount) > Number(values.requested_amount)) ctx.addIssue({ code: "custom", path: ["approved_amount"], message: "Approved amount cannot exceed the requested amount." });
       if (values.status === "rejected" && !values.rejection_reason) ctx.addIssue({ code: "custom", path: ["rejection_reason"], message: "A rejection reason is required." });
       if ((values.status === "approved" || values.verification_status === "verified") && !values.receipt_url) ctx.addIssue({ code: "custom", path: ["receipt_url"], message: "A supporting document is required before verification or approval." });
       if (values.status === "approved" && values.verification_status !== "verified") ctx.addIssue({ code: "custom", path: ["verification_status"], message: "Verify the supporting document first." });

@@ -31,15 +31,16 @@ export function RecordToolbar({ search, onSearch, placeholder, columns, records,
   return <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center"><div className="relative min-w-0 flex-1 lg:max-w-[320px]"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><Input value={search} onChange={(event) => onSearch(event.target.value)} placeholder={placeholder} className="pl-9" /></div><div className="flex flex-1 flex-wrap items-center gap-2">{children}<div className="ml-auto flex items-center gap-2"><Button variant="secondary" onClick={() => { downloadRecordsAsCsv(fileName, columns, records); toast.success("Records downloaded", { description: `${records.length} records were saved as CSV.` }); }}><Download />Download</Button><Button variant="secondary" onClick={exportExcel} disabled={exporting}>{exporting ? <LoaderCircle className="animate-spin" /> : <FileSpreadsheet />}{exporting ? "Exporting…" : "Export Excel"}</Button></div></div></div>;
 }
 
-export function SyncButton({ label = "Sync with ESS", onSynced }: { label?: string; onSynced?: () => void }) {
+export function SyncButton({ label = "Sync with HR2", onSynced }: { label?: string; onSynced?: () => void }) {
   const [syncing, setSyncing] = useState(false);
   async function sync() {
     setSyncing(true);
     const result = await synchronizeEssRecords();
     setSyncing(false);
-    if (!result.ok) { toast.error("ESS synchronization failed", { description: result.message }); return; }
+    if (!result.ok) { toast.error("HR2 synchronization failed", { description: result.message }); return; }
     onSynced?.();
-    toast.success("ESS synchronization complete", { description: `${result.counts.employees} employees, ${result.counts.attendance.toLocaleString()} attendance records, and ${result.counts.approvedRequests} approved requests are up to date${result.demo ? " in demo mode" : ""}.` });
+    window.dispatchEvent(new Event("hr2-sync-complete"));
+    toast.success("HR2 synchronization complete", { description: `${result.counts.employees} employees, ${result.counts.attendance.toLocaleString()} attendance records, and ${result.counts.approvedRequests} approved requests are now shown${result.demo ? " in demo mode" : ""}.` });
   }
   return <Button onClick={sync} disabled={syncing}>{syncing ? <LoaderCircle className="animate-spin" /> : <RefreshCw />}{syncing ? "Synchronizing…" : label}</Button>;
 }
