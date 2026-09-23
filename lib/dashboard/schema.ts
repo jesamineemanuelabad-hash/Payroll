@@ -59,6 +59,26 @@ export const liveDashboardSchema = z.object({
   compensationBands: z.array(z.object({ band: z.string(), employees: count })),
   costMix: z.object({ baseSalary: money, allowances: money, overtime: money, benefits: money, contributions: money }),
   drivers: z.object({ overtime: money, claims: money, newHires: count }),
+  accuracy: z.object({
+    coverage: z.object({
+      employees: count, employeesWithSalary: count, employeesMissingSalary: count,
+      attendanceEmployees: count, attendanceRecords: count,
+      completeAttendanceRecords: count, incompleteAttendanceRecords: count,
+    }),
+    timeTotals: z.object({
+      workedMinutes: count, lateMinutes: count, undertimeMinutes: count,
+      overtimeMinutes: count, absenceMinutes: count,
+    }),
+    payroll: z.object({
+      runId: z.string().uuid(), periodStart: z.string(), periodEnd: z.string(),
+      status: z.enum(["draft", "processing", "pending_approval", "approved", "paid", "failed"]),
+      calculatedAt: z.string().nullable(), employeeEntries: count, missingEmployeeEntries: count,
+      grossPay: money, totalDeductions: money, lateDeduction: money,
+      undertimeDeduction: money, absenceDeduction: money, sssEmployee: money,
+      philhealthEmployee: money, pagibigEmployee: money, withholdingTax: money,
+      otherDeductions: money,
+    }).nullable(),
+  }),
 });
 
 export type DashboardFilters = z.infer<typeof dashboardFiltersSchema>;

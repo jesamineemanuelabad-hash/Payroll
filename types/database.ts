@@ -74,6 +74,7 @@ export type Database = {
       workspace_session: { Args: Record<string, never>; Returns: Json };
       bootstrap_first_admin: { Args: { p_user_id: string; p_employee_number: string; p_first_name: string; p_last_name: string; p_email: string }; Returns: undefined };
       dashboard_snapshot: { Args: { p_months?: number; p_department_id?: string | null; p_location?: string | null; p_employment_type?: string | null }; Returns: Json };
+      analytics_accuracy_snapshot: { Args: { p_months?: number; p_department_id?: string | null; p_location?: string | null; p_employment_type?: string | null }; Returns: Json };
       attendance_scoring_features: { Args: { p_from: string; p_to: string }; Returns: Json };
       save_attendance_predictions: { Args: { p_from: string; p_to: string; p_model_version: string; p_validation_accuracy: number | null; p_artifact_reference: string; p_predictions: Json }; Returns: string };
       claim_automatic_attendance_scoring: { Args: Record<string, never>; Returns: Json };

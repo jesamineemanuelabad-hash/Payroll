@@ -33,7 +33,7 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       alter default privileges in schema public grant all on tables to authenticated,anon;
       alter default privileges in schema public grant usage,select on sequences to authenticated;
     `);
-    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql", "202609150001_automatic_attendance_scoring.sql", "202609190001_configurable_payroll_policy.sql", "202609220001_hr2_finance_workflows.sql"]) {
+    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql", "202609150001_automatic_attendance_scoring.sql", "202609190001_configurable_payroll_policy.sql", "202609220001_hr2_finance_workflows.sql", "202609230001_analytics_accuracy.sql"]) {
       // PGlite includes gen_random_uuid in core, but not the optional pgcrypto extension.
       const sql = (await readFile(new URL(`../supabase/migrations/${file}`, import.meta.url), "utf8")).replace("create extension if not exists pgcrypto;", "");
       await db.exec(sql);
@@ -248,6 +248,10 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       const snapshot = await db.query<{ value: { summary: { employeeCount: number; currentGross: number }; model: null | { recordsScored: number }; anomalies: unknown[] } }>("select public.dashboard_snapshot(12,null,null,null) value");
       assert.equal(snapshot.rows[0].value.summary.employeeCount, 3);
       assert.equal(snapshot.rows[0].value.summary.currentGross, 1200);
+      const accuracy = await db.query<{ value: { coverage: { employees: number; attendanceRecords: number }; payroll: { totalDeductions: number } } }>("select public.analytics_accuracy_snapshot(12,null,null,null) value");
+      assert.equal(accuracy.rows[0].value.coverage.employees, 3);
+      assert.equal(accuracy.rows[0].value.coverage.attendanceRecords, 1);
+      assert.equal(accuracy.rows[0].value.payroll.totalDeductions, 200);
       const features = await db.query<{ value: { attendanceRecordId: string }[] }>("select public.attendance_scoring_features('2026-08-01','2026-09-30') value");
       assert.equal(features.rows[0].value.length, 1);
       const predictions = [{ attendanceRecordId: features.rows[0].value[0].attendanceRecordId, classification: "late", classProbability: 0.94, anomalyScore: 0.82, anomalyReasons: ["Repeated late arrival"] }];

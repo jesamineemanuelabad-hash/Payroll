@@ -27,14 +27,14 @@ export async function loadLiveDashboard(input: DashboardFilters): Promise<Dashbo
     const { data: auth } = await db.auth.getUser();
     if (!auth.user) return { ok: false, message: "Your session expired. Sign in again." };
     const filters = parsed.data;
-    const { data, error } = await db.rpc("dashboard_snapshot", {
-      p_months: filters.months,
-      p_department_id: filters.departmentId,
-      p_location: filters.location,
-      p_employment_type: filters.employmentType,
-    });
-    if (error) return { ok: false, message: dashboardError(error) };
-    const snapshot = liveDashboardSchema.safeParse(data);
+    const parameters = { p_months: filters.months, p_department_id: filters.departmentId, p_location: filters.location, p_employment_type: filters.employmentType };
+    const [dashboard, accuracy] = await Promise.all([
+      db.rpc("dashboard_snapshot", parameters),
+      db.rpc("analytics_accuracy_snapshot", parameters),
+    ]);
+    if (dashboard.error) return { ok: false, message: dashboardError(dashboard.error) };
+    if (accuracy.error) return { ok: false, message: accuracy.error.code === "PGRST202" || accuracy.error.code === "42883" ? "Apply migration 202609230001_analytics_accuracy.sql to enable accurate attendance and deduction analytics." : dashboardError(accuracy.error) };
+    const snapshot = liveDashboardSchema.safeParse({ ...(dashboard.data as object), accuracy: accuracy.data });
     if (!snapshot.success) return { ok: false, message: "The database returned an invalid reporting snapshot. Apply the latest migration." };
     return { ok: true, data: snapshot.data };
   } catch {

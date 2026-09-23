@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { SpreadsheetImportButton } from "@/components/records/spreadsheet-import-button";
 
 type Props = { entityKeys: readonly string[]; roles: string[]; configured: boolean; setupError?: string; parent?: string };
 type Values = Record<string, string | number | boolean | null>;
@@ -100,6 +101,7 @@ function RecordGrid({ entity, roles, configured, setupError, parent }: Omit<Prop
   const config = entities[entity];
   const canWrite = configured && roles.some((role) => config.roles.includes(role));
   const canCreate = canWrite && config.allowCreate !== false;
+  const canImport = configured && config.allowImport === true && roles.some((role) => (config.importRoles ?? config.roles).includes(role));
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [count, setCount] = useState(0);
   const [page, setPage] = useState(0);
@@ -209,8 +211,9 @@ function RecordGrid({ entity, roles, configured, setupError, parent }: Omit<Prop
     finally { setExporting(false); }
   }
 
-  return <section className="mt-5 space-y-5"><div className="flex flex-col justify-between gap-4 sm:flex-row"><div><h2 className="text-xl font-semibold text-slate-950">{config.title}</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{config.description}</p></div>{canCreate && <Button onClick={() => setEditor({ row: null })}><Plus />Create {config.singular}</Button>}</div>
+  return <section className="mt-5 space-y-5"><div className="flex flex-col justify-between gap-4 sm:flex-row"><div><h2 className="text-xl font-semibold text-slate-950">{config.title}</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{config.description}</p></div><div className="flex shrink-0 flex-wrap gap-2">{canImport && <SpreadsheetImportButton entity={entity} disabled={loading} onImported={() => { setPage(0); setQuery(""); setSearch(""); void refresh(); }} />}{canCreate && <Button onClick={() => setEditor({ row: null })}><Plus />Create {config.singular}</Button>}</div></div>
     {config.createNotice && <p className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900">{config.createNotice}</p>}
+    {canImport && config.importNotice && <p className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"><span className="font-medium">Spreadsheet format: </span>{config.importNotice}</p>}
     {!configured && <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Database not connected. Set the Supabase environment variables, apply all migrations, and sign in to create and manage records. Saves are disabled until setup is complete.</p>}
     {configured && !canWrite && <p className="rounded-xl border bg-slate-50 p-4 text-sm text-slate-600">Read-only access. Your account can view records permitted by its database role.</p>}
     <div className="overflow-hidden rounded-xl border bg-white"><div className="flex flex-wrap items-center gap-2 border-b p-4"><form onSubmit={(event) => { event.preventDefault(); setPage(0); setQuery(search.trim()); }} className="flex min-w-0 flex-1 gap-2"><Input aria-label="Search records" maxLength={200} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search records…" className="max-w-xs" /><Button type="submit" variant="secondary" disabled={!configured}><Search /><span className="sr-only sm:not-sr-only">Search</span></Button></form><Button variant="secondary" onClick={refresh} disabled={!configured || loading} aria-label="Refresh records"><RefreshCw className={loading ? "animate-spin" : ""} /></Button><Button variant="secondary" disabled={!configured || exporting || Boolean(error)} onClick={() => exportAll(false)}><Download />CSV</Button><Button variant="secondary" disabled={!configured || exporting || Boolean(error)} onClick={() => exportAll(true)}><FileSpreadsheet />{exporting ? "Exporting…" : "Excel"}</Button></div>
