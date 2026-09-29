@@ -14,8 +14,8 @@ export async function synchronizeEssRecords(): Promise<EssSyncResult> {
   if (!auth.user) return { ok: false, message: "Sign in before synchronization." };
   const { data: roles, error } = await db.rpc("record_roles", {});
   if (error || !roles?.some((role) => ["super_admin", "hr_admin", "payroll_manager"].includes(role))) return { ok: false, message: "Your role cannot synchronize HR2 records." };
-  const { data: assurance, error: assuranceError } = await db.auth.mfa.getAuthenticatorAssuranceLevel();
-  if (assuranceError || assurance.currentLevel !== "aal2") return { ok: false, message: "Complete multi-factor authentication before synchronizing ESS records." };
+  const { data: mfaVerified, error: mfaError } = await db.rpc("has_mfa", {});
+  if (mfaError || !mfaVerified) return { ok: false, message: "Complete email verification before synchronizing ESS records." };
   const endpoint = process.env.ESS_SYNC_WEBHOOK_URL;
   const token = process.env.ESS_API_TOKEN;
   if (!endpoint || !token) {

@@ -21,7 +21,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
     if (error || !workspace?.active || !workspace.roles.length) redirect("/login?reason=access_disabled");
     const { data: assurance, error: assuranceError } = await db.auth.mfa.getAuthenticatorAssuranceLevel();
     if (assuranceError || !assurance) redirect("/login?reason=security_check_failed");
-    const securityDestination = mfaDestination(workspace.roles, assurance);
+    const securityDestination = mfaDestination(workspace.roles, workspace.emailMfaVerified ?? false, assurance);
     if (securityDestination) redirect(securityDestination);
     email = workspace.email ?? data.user.email;
     userName = [workspace.firstName, workspace.lastName].filter(Boolean).join(" ") || undefined;

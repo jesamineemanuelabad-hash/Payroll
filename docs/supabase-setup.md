@@ -2,24 +2,28 @@
 
 ## 1. Create a development database
 
-Copy `.env.example` to `.env.local`, then set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` from your Supabase project. Set the server-only `SUPABASE_SERVICE_ROLE_KEY` and `ADMIN_SETUP_TOKEN` only if you want to use the one-time `/setup` form. Never put either secret in a `NEXT_PUBLIC_` variable.
+Copy `.env.example` to `.env.local`, then set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` from your Supabase project. Set the server-only `SUPABASE_SERVICE_ROLE_KEY` for email-verification session recording and Access Control invitations. Configure the Gmail SMTP variables described below. Set `ADMIN_SETUP_TOKEN` only if you want to use the one-time `/setup` form. Never put server secrets in a `NEXT_PUBLIC_` variable.
 
 Apply these files in order in the Supabase SQL editor (or your migration pipeline):
 
-1. `supabase/migrations/202608280001_initial_payroll_benefits.sql`
-2. `supabase/migrations/202608300001_ess_attendance_analytics.sql`
-3. `supabase/migrations/202609050001_record_crud.sql`
-4. `supabase/migrations/202609060001_admin_bootstrap.sql`
-5. `supabase/migrations/202609060002_live_reporting.sql`
-6. `supabase/migrations/202609060003_payroll_engine.sql`
-7. `supabase/migrations/202609060004_account_settings.sql`
-8. `supabase/migrations/202609060005_rbac_management.sql`
-9. `supabase/migrations/202609060006_operational_workflows.sql`
-10. `supabase/migrations/202609060007_multi_factor_authentication.sql`
-11. `supabase/migrations/202609150001_automatic_attendance_scoring.sql`
-12. `supabase/migrations/202609190001_configurable_payroll_policy.sql`
-13. `supabase/migrations/202609220001_hr2_finance_workflows.sql`
-14. `supabase/seed.sql` (optional department/provider/plan catalog)
+1. `scripts/supabase/migrations/202608280001_initial_payroll_benefits.sql`
+2. `scripts/supabase/migrations/202608300001_ess_attendance_analytics.sql`
+3. `scripts/supabase/migrations/202609050001_record_crud.sql`
+4. `scripts/supabase/migrations/202609060001_admin_bootstrap.sql`
+5. `scripts/supabase/migrations/202609060002_live_reporting.sql`
+6. `scripts/supabase/migrations/202609060003_payroll_engine.sql`
+7. `scripts/supabase/migrations/202609060004_account_settings.sql`
+8. `scripts/supabase/migrations/202609060005_rbac_management.sql`
+9. `scripts/supabase/migrations/202609060006_operational_workflows.sql`
+10. `scripts/supabase/migrations/202609060007_multi_factor_authentication.sql`
+11. `scripts/supabase/migrations/202609150001_automatic_attendance_scoring.sql`
+12. `scripts/supabase/migrations/202609190001_configurable_payroll_policy.sql`
+13. `scripts/supabase/migrations/202609220001_hr2_finance_workflows.sql`
+14. `scripts/supabase/migrations/202609230001_analytics_accuracy.sql`
+15. `scripts/supabase/migrations/202609290001_email_otp_mfa.sql`
+16. `scripts/supabase/migrations/202609290002_custom_email_otp.sql`
+17. `scripts/supabase/migrations/202609290003_remove_email_otp_hourly_limit.sql`
+18. `scripts/supabase/seed.sql` (optional department/provider/plan catalog)
 
 Apply only migrations that have not already run. Do not rerun existing migrations. Back up any existing live data before changing its schema. The CRUD migration restricts authenticated direct table writes; application writes use validated RPCs. The operational workflow migration immediately denies terminated profiles at the database layer and adds payroll state transitions plus automatic compensation application.
 
@@ -35,7 +39,17 @@ Copy the **service_role** key from Supabase project API settings into the server
 
 The setup action uses the service key only on the server, creates a confirmed Supabase Authentication user, and calls a locked database function to create the profile and `super_admin` role. It works only while no `super_admin` exists. If profile creation fails, the newly created Auth user is removed. Remove `ADMIN_SETUP_TOKEN` after bootstrap. Keep `SUPABASE_SERVICE_ROLE_KEY` only if the Access Control screen must send Supabase Auth invitations; it remains server-only and must never use a `NEXT_PUBLIC_` prefix.
 
-After the MFA migration is applied, the first sign-in by a `super_admin`, `hr_admin`, `payroll_manager`, or `hr_manager` is redirected to authenticator setup. Scan the QR code with a TOTP authenticator and verify the six-digit code. Future password logins are redirected to the MFA challenge before the dashboard opens. No additional environment variable is needed for TOTP. Enroll a second authenticator as a backup because recovery codes are not available. Database role checks require an `aal2` JWT for privileged roles, so calling Supabase RPCs directly cannot bypass the application screen.
+### Configure Gmail email-code delivery
+
+Privileged sign-ins require the password followed by a one-time code sent by the application to the account's confirmed email. The code expires after 90 seconds and can be resent after 60 seconds. Supabase's Auth email OTP template and expiry setting are not used for this second step.
+
+1. In the Google account, enable 2-Step Verification and create an App Password for this application. If Google does not offer App Passwords for the account, use an SMTP provider and its credentials instead.
+2. In `.env.local`, set `EMAIL_SMTP_HOST=smtp.gmail.com`, `EMAIL_SMTP_PORT=587`, and `EMAIL_SMTP_USER` to the full Gmail address.
+3. Set `EMAIL_SMTP_APP_PASSWORD` to the generated App Password (not the regular Google password), and set `EMAIL_FROM_ADDRESS` to that same Gmail address.
+4. Generate a separate hash secret locally with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"` and set it as `EMAIL_OTP_HASH_SECRET`. Keep all these values private in `.env.local` and your deployment's secret manager. Never paste them into chat, commit them, or expose them in a `NEXT_PUBLIC_` variable.
+5. Restart the app after setting the variables and test a privileged login using an account whose email is confirmed.
+
+The application stores only an HMAC hash of each code. Codes are single-use and bound to the authenticated Supabase session; after verification, the database records proof for that session for up to 12 hours and requires that proof for privileged operations. An AAL2 authenticator session alone does not bypass the email check. Keep `SUPABASE_SERVICE_ROLE_KEY` server-only; it is needed for challenge issuance, verification, session proof, and Access Control invitations.
 
 Alternatively, create and confirm an email/password user in Supabase Authentication, copy its UUID, and run the following in the trusted SQL editor:
 

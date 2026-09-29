@@ -50,7 +50,7 @@ export async function updateAccountPassword(input: unknown): Promise<AccountResu
     ]);
     if(sessionError||assuranceError||factorsError||!assurance||!factors)return{ok:false,message:"Your security status could not be verified. Try again."};
     const workspace=session as unknown as WorkspaceSession|null;
-    if ((requiresMfa(workspace?.roles??[])||(factors?.totp.length??0)>0)&&assurance?.currentLevel!=="aal2") return {ok:false,message:"Complete multi-factor authentication before changing your password."};
+    if ((requiresMfa(workspace?.roles??[])||(factors?.totp.length??0)>0)&&!workspace?.emailMfaVerified) return {ok:false,message:"Complete email verification before changing your password."};
     const { error }=await db.auth.updateUser({password:parsed.data.password});
     if (error) return { ok:false,message:error.message };
     return { ok:true,message:"Your password was changed." };

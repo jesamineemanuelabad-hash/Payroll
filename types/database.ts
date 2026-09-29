@@ -71,7 +71,13 @@ export type Database = {
     Views: Record<string, never>;
     Functions: {
       record_roles: { Args: Record<string, never>; Returns: string[] };
+      has_email_mfa_verification: { Args: Record<string, never>; Returns: boolean };
+      has_mfa: { Args: Record<string, never>; Returns: boolean };
       workspace_session: { Args: Record<string, never>; Returns: Json };
+      record_email_mfa_verification: { Args: { p_user_id: string; p_session_id: string }; Returns: undefined };
+      issue_login_email_otp: { Args: { p_user_id: string; p_session_id: string; p_code_hash: string }; Returns: string };
+      verify_login_email_otp: { Args: { p_user_id: string; p_session_id: string; p_code_hash: string }; Returns: string };
+      invalidate_login_email_otp: { Args: { p_user_id: string; p_session_id: string; p_code_hash: string }; Returns: undefined };
       bootstrap_first_admin: { Args: { p_user_id: string; p_employee_number: string; p_first_name: string; p_last_name: string; p_email: string }; Returns: undefined };
       dashboard_snapshot: { Args: { p_months?: number; p_department_id?: string | null; p_location?: string | null; p_employment_type?: string | null }; Returns: Json };
       analytics_accuracy_snapshot: { Args: { p_months?: number; p_department_id?: string | null; p_location?: string | null; p_employment_type?: string | null }; Returns: Json };

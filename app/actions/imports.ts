@@ -103,9 +103,9 @@ export async function importSpreadsheetRows(input: unknown): Promise<ImportResul
     if (!auth.user) return { ok: false, message: "Your session expired. Sign in again." };
     const { data: session, error: sessionError } = await db.rpc("workspace_session", {});
     if (sessionError) return { ok: false, message: sessionError.message };
-    const workspace = session as unknown as { roles?: string[]; authenticatorAssuranceLevel?: string; mfaRequired?: boolean; active?: boolean };
+    const workspace = session as unknown as { roles?: string[]; authenticatorAssuranceLevel?: string; emailMfaVerified?: boolean; mfaRequired?: boolean; active?: boolean };
     if (!workspace.active || !workspace.roles?.some((role) => roles[parsed.data.entity].includes(role))) return { ok: false, message: "Your role cannot import these records." };
-    if (workspace.mfaRequired && workspace.authenticatorAssuranceLevel !== "aal2") return { ok: false, message: "Complete multi-factor authentication before importing records." };
+    if (workspace.mfaRequired && !workspace.emailMfaVerified) return { ok: false, message: "Complete email verification before importing records." };
 
     const admin = createSupabaseAdminClient();
     const errors: ImportError[] = [];

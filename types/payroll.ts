@@ -76,5 +76,6 @@ export type WorkspaceSession = {
   active: boolean;
   roles: string[];
   mfaRequired?: boolean;
+  emailMfaVerified?: boolean;
   authenticatorAssuranceLevel?: string;
 };

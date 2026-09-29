@@ -34,7 +34,7 @@ export function SignOutDialog({ open, onOpenChange }: { open: boolean; onOpenCha
           </span>
           <DialogTitle className="mt-4">Sign out of Payroll &amp; Benefits?</DialogTitle>
           <DialogDescription>
-            Your secure administrator session will end. You will need your password and authenticator code to access the workspace again.
+            Your secure administrator session will end. You will need your password and email verification code to access the workspace again.
           </DialogDescription>
         </div>
         <div className="flex flex-col-reverse gap-2 px-6 py-4 sm:flex-row sm:justify-end">
