@@ -86,6 +86,113 @@ export async function readTodayAttendance(): Promise<Result<TodayAttendanceSnaps
   }
 }
 
+const attendanceHistoryRecordSchema = z.object({
+  id: z.string().uuid(),
+  attendanceDate: z.string().date(),
+  classification: z.enum(["on_time", "late", "absent", "overtime", "on_leave"]),
+  timeIn: z.string().nullable(),
+  timeOut: z.string().nullable(),
+  workedMinutes: z.number().int().nonnegative(),
+  lateMinutes: z.number().int().nonnegative(),
+  undertimeMinutes: z.number().int().nonnegative(),
+  overtimeMinutes: z.number().int().nonnegative(),
+  absenceMinutes: z.number().int().nonnegative(),
+  nightMinutes: z.number().int().nonnegative(),
+  workDayType: z.string(),
+  approvedLeave: z.boolean(),
+});
+
+export type AttendanceHistoryRecord = z.infer<typeof attendanceHistoryRecordSchema>;
+
+const attendanceDateRecordSchema = attendanceHistoryRecordSchema.extend({
+  employeeId: z.string().uuid(),
+  employeeNumber: z.string(),
+  employeeName: z.string(),
+  departmentId: z.string().uuid().nullable(),
+  departmentName: z.string().nullable(),
+});
+
+export type AttendanceDateRecord = z.infer<typeof attendanceDateRecordSchema>;
+
+export async function readAttendanceCalendar(input: unknown): Promise<Result<Array<{ date: string; recordCount: number }>>> {
+  const parsed = z.object({ from: z.string().date(), to: z.string().date() }).strict().safeParse(input);
+  if (!parsed.success || parsed.data.from > parsed.data.to ||
+    (Date.parse(`${parsed.data.to}T00:00:00Z`) - Date.parse(`${parsed.data.from}T00:00:00Z`)) / 86400000 > 42) {
+    return { ok: false, message: "Invalid attendance calendar range." };
+  }
+  if (!hasSupabaseEnvironment()) return { ok: false, message: "Connect Supabase to view attendance history." };
+  try {
+    const db = await createSupabaseServerClient();
+    const { data: auth } = await db.auth.getUser();
+    if (!auth.user) return { ok: false, message: "Your session expired. Sign in again." };
+    const { data, error } = await db.rpc("attendance_calendar_month", { p_from: parsed.data.from, p_to: parsed.data.to });
+    if (error) return { ok: false, message: error.code === "PGRST202" ? "Apply migration 202609290011_attendance_history_views.sql to enable the attendance calendar." : databaseMessage(error) };
+    const result = z.array(z.object({ date: z.string().date(), recordCount: z.number().int().positive() })).safeParse(data);
+    if (!result.success) return { ok: false, message: "Attendance calendar data could not be read." };
+    return { ok: true, data: result.data };
+  } catch {
+    return { ok: false, message: "Unable to load the attendance calendar. Try again." };
+  }
+}
+
+export async function readAttendanceForDate(input: unknown): Promise<Result<AttendanceDateRecord[]>> {
+  const parsed = z.string().date().safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Invalid attendance date." };
+  if (!hasSupabaseEnvironment()) return { ok: false, message: "Connect Supabase to view attendance records." };
+  try {
+    const db = await createSupabaseServerClient();
+    const { data: auth } = await db.auth.getUser();
+    if (!auth.user) return { ok: false, message: "Your session expired. Sign in again." };
+    const { data, error } = await db.rpc("attendance_records_for_date", { p_date: parsed.data });
+    if (error) return { ok: false, message: error.code === "PGRST202" ? "Apply migration 202609290011_attendance_history_views.sql to view attendance by date." : databaseMessage(error) };
+    const result = z.array(attendanceDateRecordSchema).safeParse(data);
+    if (!result.success) return { ok: false, message: "Attendance records could not be read." };
+    return { ok: true, data: result.data };
+  } catch {
+    return { ok: false, message: "Unable to load attendance for this date. Try again." };
+  }
+}
+
+const employeeAttendanceHistorySchema = z.object({
+  employee: z.object({
+    id: z.string().uuid(),
+    employeeNumber: z.string(),
+    employeeName: z.string(),
+    departmentName: z.string().nullable(),
+  }).nullable(),
+  totalCount: z.number().int().nonnegative(),
+  records: z.array(attendanceHistoryRecordSchema),
+});
+
+export type EmployeeAttendanceHistory = z.infer<typeof employeeAttendanceHistorySchema>;
+
+export async function readEmployeeAttendanceHistory(input: unknown): Promise<Result<EmployeeAttendanceHistory>> {
+  const parsed = z.object({
+    employeeId: z.string().uuid(),
+    page: z.number().int().min(0).max(10000).default(0),
+    size: z.number().int().min(1).max(100).default(30),
+  }).strict().safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Invalid employee attendance history request." };
+  if (!hasSupabaseEnvironment()) return { ok: false, message: "Connect Supabase to view attendance history." };
+  try {
+    const db = await createSupabaseServerClient();
+    const { data: auth } = await db.auth.getUser();
+    if (!auth.user) return { ok: false, message: "Your session expired. Sign in again." };
+    const { data, error } = await db.rpc("employee_attendance_history", {
+      p_employee_id: parsed.data.employeeId,
+      p_page: parsed.data.page,
+      p_size: parsed.data.size,
+    });
+    if (error) return { ok: false, message: error.code === "PGRST202" ? "Apply migration 202609290011_attendance_history_views.sql to view employee attendance history." : databaseMessage(error) };
+    const result = employeeAttendanceHistorySchema.safeParse(data);
+    if (!result.success) return { ok: false, message: "Employee attendance history could not be read." };
+    if (!result.data.employee) return { ok: false, message: "This employee’s attendance history is not available to your account." };
+    return { ok: true, data: result.data };
+  } catch {
+    return { ok: false, message: "Unable to load employee attendance history. Try again." };
+  }
+}
+
 export async function saveRecord(input: unknown): Promise<Result<RecordRow>> {
   const parsed = z.object({ entity: z.string().refine((key) => Object.hasOwn(entities, key)), id: z.string().uuid().optional(), version: z.string().datetime({ offset: true }).optional(), values: z.record(z.string(), z.unknown()) }).strict().safeParse(input);
   if (!parsed.success) return { ok: false, message: "Invalid record request." };

@@ -34,7 +34,7 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       alter default privileges in schema public grant all on tables to authenticated,anon;
       alter default privileges in schema public grant usage,select on sequences to authenticated;
     `);
-    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql", "202609150001_automatic_attendance_scoring.sql", "202609190001_configurable_payroll_policy.sql", "202609220001_hr2_finance_workflows.sql", "202609230001_analytics_accuracy.sql", "202609290001_email_otp_mfa.sql", "202609290002_custom_email_otp.sql", "202609290003_remove_email_otp_hourly_limit.sql", "202609290004_today_attendance_snapshot.sql", "202609290005_today_active_employee_roster.sql", "202609290006_include_demo_employees_in_today_roster.sql", "202609290007_allow_nonpayroll_demo_attendance.sql", "202609290008_use_existing_payroll_employee_roster.sql", "202609290009_attendance_department_filters.sql", "202609290010_exclude_system_admins_from_attendance.sql"]) {
+    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql", "202609150001_automatic_attendance_scoring.sql", "202609190001_configurable_payroll_policy.sql", "202609220001_hr2_finance_workflows.sql", "202609230001_analytics_accuracy.sql", "202609290001_email_otp_mfa.sql", "202609290002_custom_email_otp.sql", "202609290003_remove_email_otp_hourly_limit.sql", "202609290004_today_attendance_snapshot.sql", "202609290005_today_active_employee_roster.sql", "202609290006_include_demo_employees_in_today_roster.sql", "202609290007_allow_nonpayroll_demo_attendance.sql", "202609290008_use_existing_payroll_employee_roster.sql", "202609290009_attendance_department_filters.sql", "202609290010_exclude_system_admins_from_attendance.sql", "202609290011_attendance_history_views.sql"]) {
       // PGlite includes gen_random_uuid in core, but not the optional pgcrypto extension.
       const sql = (await readFile(new URL(`../scripts/supabase/migrations/${file}`, import.meta.url), "utf8")).replace("create extension if not exists pgcrypto;", "");
       await db.exec(sql);
@@ -133,6 +133,17 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
         { employeeNumber: "HR", classification: "no_record", hasClockIn: false, hasClockOut: false, hasAttendance: false, departmentName: null },
         { employeeNumber: "OTHER", classification: "absent", hasClockIn: false, hasClockOut: false, hasAttendance: true, departmentName: null },
       ]);
+      const day = snapshot.date;
+      const calendar = await db.query<{ value: Array<{ date: string; recordCount: number }> }>("select public.attendance_calendar_month($1::date,$1::date) value", [day]);
+      assert.deepEqual(calendar.rows[0].value, [{ date: day, recordCount: 2 }]);
+      const daily = await db.query<{ value: Array<{ employeeNumber: string; workedMinutes: number; departmentId: string | null }> }>("select public.attendance_records_for_date($1::date) value", [day]);
+      assert.deepEqual(daily.rows[0].value.map((record) => record.employeeNumber).sort(), ["EMP", "OTHER"]);
+      assert.ok(daily.rows[0].value.every((record) => Number.isInteger(record.workedMinutes)));
+      assert.ok(daily.rows[0].value.every((record) => record.departmentId === null));
+      const history = await db.query<{ value: { employee: { employeeNumber: string }; totalCount: number; records: Array<{ attendanceDate: string }> } }>("select public.employee_attendance_history($1,0,30) value", [worker]);
+      assert.equal(history.rows[0].value.employee.employeeNumber, "EMP");
+      assert.equal(history.rows[0].value.totalCount, 1);
+      assert.equal(history.rows[0].value.records[0].attendanceDate, day);
       await db.exec("set role service_role");
       await db.query("delete from public.attendance_records where external_id in ('TODAY-LATE','TODAY-ABSENT')");
       await db.query("delete from public.user_roles where user_id=$1 and role='super_admin'", [systemAdmin]);

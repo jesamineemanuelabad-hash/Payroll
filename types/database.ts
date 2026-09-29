@@ -76,6 +76,9 @@ export type Database = {
       workspace_session: { Args: Record<string, never>; Returns: Json };
       record_email_mfa_verification: { Args: { p_user_id: string; p_session_id: string }; Returns: undefined };
       today_attendance_snapshot: { Args: Record<string, never>; Returns: Json };
+      attendance_calendar_month: { Args: { p_from: string; p_to: string }; Returns: Json };
+      attendance_records_for_date: { Args: { p_date: string }; Returns: Json };
+      employee_attendance_history: { Args: { p_employee_id: string; p_page?: number; p_size?: number }; Returns: Json };
       issue_login_email_otp: { Args: { p_user_id: string; p_session_id: string; p_code_hash: string }; Returns: string };
       verify_login_email_otp: { Args: { p_user_id: string; p_session_id: string; p_code_hash: string }; Returns: string };
       invalidate_login_email_otp: { Args: { p_user_id: string; p_session_id: string; p_code_hash: string }; Returns: undefined };
