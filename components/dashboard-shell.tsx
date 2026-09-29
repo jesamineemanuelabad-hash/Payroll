@@ -41,7 +41,7 @@ type NavItem = {
 };
 
 const payrollItems: NavItem[] = [
-  { label: "Time & Attendance", icon: Fingerprint, href: "/payroll-benefits/attendance" },
+  { label: "Employee Management", icon: Fingerprint, href: "/payroll-benefits/attendance" },
   { label: "Payroll Management", icon: WalletCards, href: "/payroll-benefits/payroll" },
   { label: "Compensation Planning", icon: BriefcaseBusiness, href: "/payroll-benefits/compensation" },
   { label: "Claims & Reimbursement", icon: ReceiptText, href: "/payroll-benefits/claims" },

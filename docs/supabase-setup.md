@@ -54,7 +54,7 @@ values ('REPLACE-WITH-AUTH-USER-UUID'::uuid, 'super_admin');
 commit;
 ```
 
-Both bootstrap methods are trusted administrative operations. The `/setup` form requires the private server token and closes after the first admin. Subsequent payroll employee profiles come from **Time & Attendance → Sync with HR2**; manual profile creation is disabled. If an employee also needs application access, invite or link their Authentication account through the controlled access workflow used by the HR2 integration. Deleting a profile does not delete its Authentication account. Deactivate employment or use the Auth dashboard when login access must also be revoked.
+Both bootstrap methods are trusted administrative operations. The `/setup` form requires the private server token and closes after the first admin. Subsequent payroll employee profiles come from **Employee Management → Sync with HR2**; manual profile creation is disabled. If an employee also needs application access, invite or link their Authentication account through the controlled access workflow used by the HR2 integration. Deleting a profile does not delete its Authentication account. Deactivate employment or use the Auth dashboard when login access must also be revoked.
 
 After applying the RBAC migration, a super administrator can manage users from **Account settings → Access control**. The trusted SQL editor remains an emergency administrative option:
 
@@ -64,13 +64,13 @@ values ('REPLACE-WITH-EMPLOYEE-UUID'::uuid, 'employee')
 on conflict do nothing;
 ```
 
-| Role | CRUD permissions |
-| --- | --- |
-| `super_admin` | All record modules |
-| `hr_admin` | Employees, departments, attendance, compensation, benefits, claims |
-| `hr_manager` | Compensation and claims |
-| `payroll_manager` | Attendance, draft payroll runs and entries |
-| `manager`, `employee` | Read permitted records through RLS; no CRUD mutation RPC access |
+| Role                  | CRUD permissions                                                   |
+| --------------------- | ------------------------------------------------------------------ |
+| `super_admin`         | All record modules                                                 |
+| `hr_admin`            | Employees, departments, attendance, compensation, benefits, claims |
+| `hr_manager`          | Compensation and claims                                            |
+| `payroll_manager`     | Attendance, draft payroll runs and entries                         |
+| `manager`, `employee` | Read permitted records through RLS; no CRUD mutation RPC access    |
 
 An account without a profile/role may sign in but cannot create records. RLS limits its reads. Access Control supports invitations, atomic multi-role assignments, manager department scopes, employment status, and payroll eligibility. Direct authenticated writes to role and manager-scope tables are revoked; every application change is protected against owner/last-admin lockout and written to `audit_logs`. Invitations require the server-only service-role key and correctly configured Supabase Auth email delivery.
 
