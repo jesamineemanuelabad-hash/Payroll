@@ -26,7 +26,6 @@ import {
   Settings,
   SlidersHorizontal,
   ShieldCheck,
-  UsersRound,
   WalletCards,
   X,
   type LucideIcon,
@@ -51,7 +50,6 @@ const payrollItems: NavItem[] = [
 
 const commandItems: NavItem[] = [
   { label: "Overview", icon: LayoutDashboard, href: "/overview", roles: ["super_admin", "hr_admin", "payroll_manager", "hr_manager"] },
-  { label: "People", icon: UsersRound, href: "/payroll-benefits/people" },
   ...payrollItems,
 ];
 
@@ -72,7 +70,6 @@ function SidebarContent({ collapsed, onNavigate, userEmail, roles }: { collapsed
   const pathname = usePathname();
   const visiblePayrollItems = payrollItems.filter((item) => isVisible(item, roles));
   const showOverview = roles.some((role) => ["super_admin", "hr_admin", "payroll_manager", "hr_manager"].includes(role));
-  const peopleActive = pathname.startsWith("/payroll-benefits/people");
 
   return (
     <div className="flex h-full flex-col">
@@ -94,12 +91,6 @@ function SidebarContent({ collapsed, onNavigate, userEmail, roles }: { collapsed
           <LayoutDashboard className="size-[18px] shrink-0" />
           {!collapsed && <span>Dashboard</span>}
         </Link>}
-        <Link href="/payroll-benefits/people" className={cn("relative mt-0.5 flex h-9 w-full items-center rounded-lg text-sm transition", collapsed ? "justify-center" : "gap-3 px-2.5", peopleActive ? "bg-indigo-50 font-medium text-indigo-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")} aria-label="People" title={collapsed ? "People" : undefined} onClick={onNavigate}>
-          {peopleActive && !collapsed && <span className="absolute -left-3 h-5 w-0.5 rounded-r bg-indigo-600" />}
-          <UsersRound className="size-[18px] shrink-0" />
-          {!collapsed && <span>People</span>}
-        </Link>
-
         <div className="my-4 h-px bg-slate-200" />
         {!collapsed && <p className="mb-2 px-2.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">Payroll & Benefits</p>}
         {visiblePayrollItems.map((item) => {
