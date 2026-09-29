@@ -34,7 +34,7 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       alter default privileges in schema public grant all on tables to authenticated,anon;
       alter default privileges in schema public grant usage,select on sequences to authenticated;
     `);
-    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql", "202609150001_automatic_attendance_scoring.sql", "202609190001_configurable_payroll_policy.sql", "202609220001_hr2_finance_workflows.sql", "202609230001_analytics_accuracy.sql", "202609290001_email_otp_mfa.sql", "202609290002_custom_email_otp.sql", "202609290003_remove_email_otp_hourly_limit.sql", "202609290004_today_attendance_snapshot.sql", "202609290005_today_active_employee_roster.sql", "202609290006_include_demo_employees_in_today_roster.sql", "202609290007_allow_nonpayroll_demo_attendance.sql", "202609290008_use_existing_payroll_employee_roster.sql", "202609290009_attendance_department_filters.sql", "202609290010_exclude_system_admins_from_attendance.sql", "202609290011_attendance_history_views.sql"]) {
+    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql", "202609150001_automatic_attendance_scoring.sql", "202609190001_configurable_payroll_policy.sql", "202609220001_hr2_finance_workflows.sql", "202609230001_analytics_accuracy.sql", "202609290001_email_otp_mfa.sql", "202609290002_custom_email_otp.sql", "202609290003_remove_email_otp_hourly_limit.sql", "202609290004_today_attendance_snapshot.sql", "202609290005_today_active_employee_roster.sql", "202609290006_include_demo_employees_in_today_roster.sql", "202609290007_allow_nonpayroll_demo_attendance.sql", "202609290008_use_existing_payroll_employee_roster.sql", "202609290009_attendance_department_filters.sql", "202609290010_exclude_system_admins_from_attendance.sql", "202609290011_attendance_history_views.sql", "202609300012_department_cards_snapshot.sql", "202609300013_department_cards_simplify.sql"]) {
       // PGlite includes gen_random_uuid in core, but not the optional pgcrypto extension.
       const sql = (await readFile(new URL(`../scripts/supabase/migrations/${file}`, import.meta.url), "utf8")).replace("create extension if not exists pgcrypto;", "");
       await db.exec(sql);
@@ -206,6 +206,18 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
     await t.test("create, list, update, and delete a department; stale edits and duplicate codes fail", async () => {
       const first = await create("departments", { name: "Finance", code: "FIN" });
       assert.equal((await read("departments", first.id)).rows[0].name, "Finance");
+      const cards = await db.query<{ value: Array<{ id: string; name: string; code: string; memberCount: number; members: unknown[] }> }>("select public.department_cards_snapshot() value");
+      assert.deepEqual(cards.rows[0].value.find((department) => department.id === first.id), {
+        id: first.id,
+        name: "Finance",
+        code: "FIN",
+        updatedAt: first.updated_at,
+        memberCount: 0,
+        members: [],
+      });
+      await as(worker);
+      await assert.rejects(db.query("select public.department_cards_snapshot()"), /HR administrators/i);
+      await as(admin);
       created.departments = await update("departments", first, { name: "Finance Operations" });
       await assert.rejects(update("departments", first, { name: "Lost update" }), /changed/);
       await assert.rejects(create("departments", { name: "Duplicate", code: "FIN" }), /unique/);

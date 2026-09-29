@@ -47,6 +47,42 @@ export async function readRecords(input: unknown): Promise<Result<{ rows: Record
   } catch { return { ok: false, message: "Unable to reach the database. Try again." }; }
 }
 
+const departmentCardsSchema = z.array(z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  code: z.string(),
+  updatedAt: z.string(),
+  memberCount: z.number().int().nonnegative(),
+  members: z.array(z.object({
+    id: z.string().uuid(),
+    name: z.string(),
+    employeeNumber: z.string(),
+  })),
+}));
+
+export type DepartmentCardData = z.infer<typeof departmentCardsSchema>[number];
+
+export async function readDepartmentCards(): Promise<Result<DepartmentCardData[]>> {
+  if (!hasSupabaseEnvironment()) return { ok: false, message: "Connect Supabase to view department summaries." };
+  try {
+    const db = await createSupabaseServerClient();
+    const { data: auth } = await db.auth.getUser();
+    if (!auth.user) return { ok: false, message: "Your session expired. Sign in again." };
+    const { data: roles, error: rolesError } = await db.rpc("record_roles", {});
+    if (rolesError) return { ok: false, message: databaseMessage(rolesError) };
+    if (!roles?.some((role) => ["super_admin", "hr_admin"].includes(role))) {
+      return { ok: false, message: "Only HR administrators can view department summaries." };
+    }
+    const { data, error } = await db.rpc("department_cards_snapshot", {});
+    if (error) return { ok: false, message: error.code === "PGRST202" ? "Apply migration 202609300012_department_cards_snapshot.sql to enable department cards." : databaseMessage(error) };
+    const parsed = departmentCardsSchema.safeParse(data);
+    if (!parsed.success) return { ok: false, message: "Department summary data could not be read." };
+    return { ok: true, data: parsed.data };
+  } catch {
+    return { ok: false, message: "Unable to load department summaries. Try again." };
+  }
+}
+
 const todayAttendanceSnapshotSchema = z.object({
   date: z.string().date(),
   expectedCount: z.number().int().nonnegative(),

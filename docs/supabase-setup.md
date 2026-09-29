@@ -31,7 +31,9 @@ Apply these files in order in the Supabase SQL editor (or your migration pipelin
 23. `scripts/supabase/migrations/202609290009_attendance_department_filters.sql`
 24. `scripts/supabase/migrations/202609290010_exclude_system_admins_from_attendance.sql`
 25. `scripts/supabase/migrations/202609290011_attendance_history_views.sql`
-26. `scripts/supabase/seed.sql` (optional department/provider/plan catalog)
+26. `scripts/supabase/migrations/202609300012_department_cards_snapshot.sql`
+27. `scripts/supabase/migrations/202609300013_department_cards_simplify.sql`
+28. `scripts/supabase/seed.sql` (optional department/provider/plan catalog)
 
 Apply only migrations that have not already run. Do not rerun existing migrations. Back up any existing live data before changing its schema. The CRUD migration restricts authenticated direct table writes; application writes use validated RPCs. The operational workflow migration immediately denies terminated profiles at the database layer and adds payroll state transitions plus automatic compensation application.
 
@@ -40,6 +42,8 @@ Today’s Attendance lists every active payroll employee and joins that employee
 Migration `202609290009_attendance_department_filters.sql` adds department labels to the snapshot for the department filter in the Attendance summary. Migration `202609290010_exclude_system_admins_from_attendance.sql` also excludes the protected system owner and system-administrator profiles from the employee roster.
 
 Migration `202609290011_attendance_history_views.sql` enables the historical attendance calendar, selected-date records, and paginated employee attendance history. These views use stored daily attendance rows, not raw biometric-device punch logs.
+
+Migration `202609300012_department_cards_snapshot.sql` enables the department card view. Migration `202609300013_department_cards_simplify.sql` omits department-lead and payroll summaries; cards show department identity and active employee membership only.
 
 To populate demo attendance in the Supabase project configured by `.env.local`, apply migrations 290008–290011, temporarily set `ALLOW_ATTENDANCE_SAMPLE_SEED=true`, and run `npm run seed:attendance-sample`. Confirm the displayed project hostname and prompt. The command uses every existing active payroll employee except system owners and super administrators, creates no profiles or Auth users, and replaces today's attendance with a varied sample classification across the roster. This is intended for capstone/demo data. Remove the temporary allow flag afterward. Sample rows have `external_id` values prefixed `SAMPLE-ATT-` so they can be identified or removed.
 
