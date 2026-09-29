@@ -5,7 +5,7 @@ import { Building2, ChevronRight, LoaderCircle, MoreHorizontal, UsersRound } fro
 import { readDepartmentCards, type DepartmentCardData } from "@/app/actions/records";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import type { RecordRow } from "@/lib/records/config";
 
 const accents = [
@@ -36,13 +36,11 @@ export function DepartmentCards({
   canWrite,
   onEdit,
   onView,
-  onDelete,
 }: {
   configured: boolean;
   canWrite: boolean;
   onEdit: (record: RecordRow) => void;
   onView: (record: RecordRow) => void;
-  onDelete: (record: RecordRow) => void;
 }) {
   const [departments, setDepartments] = useState<DepartmentCardData[]>([]);
   const [error, setError] = useState("");
@@ -105,8 +103,6 @@ export function DepartmentCards({
                 <DropdownMenuContent align="end">
                   <DropdownMenuItem onSelect={() => onView(asRecord(department))}>View details</DropdownMenuItem>
                   <DropdownMenuItem onSelect={() => onEdit(asRecord(department))}>Edit department</DropdownMenuItem>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuItem className="text-red-600 focus:text-red-700" onSelect={() => onDelete(asRecord(department))}>Delete department</DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>}
             </div>
