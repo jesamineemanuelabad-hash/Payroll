@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
+    "seed:attendance-sample": "tsx scripts/seed-attendance-sample.ts",
     "test:ui": "playwright test"
   },
   "dependencies": {

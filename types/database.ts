@@ -75,6 +75,7 @@ export type Database = {
       has_mfa: { Args: Record<string, never>; Returns: boolean };
       workspace_session: { Args: Record<string, never>; Returns: Json };
       record_email_mfa_verification: { Args: { p_user_id: string; p_session_id: string }; Returns: undefined };
+      today_attendance_snapshot: { Args: Record<string, never>; Returns: Json };
       issue_login_email_otp: { Args: { p_user_id: string; p_session_id: string; p_code_hash: string }; Returns: string };
       verify_login_email_otp: { Args: { p_user_id: string; p_session_id: string; p_code_hash: string }; Returns: string };
       invalidate_login_email_otp: { Args: { p_user_id: string; p_session_id: string; p_code_hash: string }; Returns: undefined };

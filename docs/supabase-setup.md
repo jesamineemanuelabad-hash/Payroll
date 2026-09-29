@@ -23,9 +23,22 @@ Apply these files in order in the Supabase SQL editor (or your migration pipelin
 15. `scripts/supabase/migrations/202609290001_email_otp_mfa.sql`
 16. `scripts/supabase/migrations/202609290002_custom_email_otp.sql`
 17. `scripts/supabase/migrations/202609290003_remove_email_otp_hourly_limit.sql`
-18. `scripts/supabase/seed.sql` (optional department/provider/plan catalog)
+18. `scripts/supabase/migrations/202609290004_today_attendance_snapshot.sql`
+19. `scripts/supabase/migrations/202609290005_today_active_employee_roster.sql`
+20. `scripts/supabase/migrations/202609290006_include_demo_employees_in_today_roster.sql`
+21. `scripts/supabase/migrations/202609290007_allow_nonpayroll_demo_attendance.sql`
+22. `scripts/supabase/migrations/202609290008_use_existing_payroll_employee_roster.sql`
+23. `scripts/supabase/migrations/202609290009_attendance_department_filters.sql`
+24. `scripts/supabase/migrations/202609290010_exclude_system_admins_from_attendance.sql`
+25. `scripts/supabase/seed.sql` (optional department/provider/plan catalog)
 
 Apply only migrations that have not already run. Do not rerun existing migrations. Back up any existing live data before changing its schema. The CRUD migration restricts authenticated direct table writes; application writes use validated RPCs. The operational workflow migration immediately denies terminated profiles at the database layer and adds payroll state transitions plus automatic compensation application.
+
+Today’s Attendance lists every active payroll employee and joins that employee’s attendance row for the Manila calendar date. Employees without a row appear as **No record**, not as absent. Migration `202609290008_use_existing_payroll_employee_roster.sql` restores the roster to existing payroll-eligible employees and restores the normal database guard requiring attendance to reference payroll employees. Apply this migration after 290007, especially if the earlier demo-only migrations were already applied.
+
+Migration `202609290009_attendance_department_filters.sql` adds department labels to the snapshot for the department filter in the Attendance summary. Migration `202609290010_exclude_system_admins_from_attendance.sql` also excludes the protected system owner and system-administrator profiles from the employee roster.
+
+To populate demo attendance in the Supabase project configured by `.env.local`, apply migrations 290008–290010, temporarily set `ALLOW_ATTENDANCE_SAMPLE_SEED=true`, and run `npm run seed:attendance-sample`. Confirm the displayed project hostname and prompt. The command uses every existing active payroll employee except system owners and super administrators, creates no profiles or Auth users, and replaces today's attendance with a varied sample classification across the roster. This is intended for capstone/demo data. Remove the temporary allow flag afterward. Sample rows have `external_id` values prefixed `SAMPLE-ATT-` so they can be identified or removed.
 
 ## 2. Provision the initial administrator
 

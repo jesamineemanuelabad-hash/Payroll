@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { SpreadsheetImportButton } from "@/components/records/spreadsheet-import-button";
+import { TodayAttendanceSummary } from "@/components/records/today-attendance-summary";
 
 type Props = { entityKeys: readonly string[]; roles: string[]; configured: boolean; setupError?: string; parent?: string };
 type Values = Record<string, string | number | boolean | null>;
@@ -123,6 +124,7 @@ function RecordGrid({ entity, roles, configured, setupError, parent }: Omit<Prop
 
   const refresh = useCallback(() => {
     if (!configured) return Promise.resolve();
+    if (entity === "attendance_records") window.dispatchEvent(new Event("attendance-records-refresh"));
     const current = ++generation.current;
     return readRecords({ entity, page, search: query, parent }).then((result) => {
       if (current !== generation.current) return;
@@ -131,7 +133,7 @@ function RecordGrid({ entity, roles, configured, setupError, parent }: Omit<Prop
       if (page > 0 && !result.data.rows.length) setPage((value) => Math.max(0, value - 1));
     }).catch(() => { if (current === generation.current) setError("Unable to load records. Try again."); })
       .finally(() => { if (current === generation.current) setLoading(false); });
-  }, [configured, entity, page, parent, query]);
+  }, [configured, entity, page, parent, query, setPage]);
   useEffect(() => { void refresh(); const tracker = generation; return () => { tracker.current++; }; }, [refresh]);
   useEffect(() => {
     if (!["profiles", "attendance_records", "employee_compensation_history", "leave_requests"].includes(entity)) return;
@@ -214,6 +216,7 @@ function RecordGrid({ entity, roles, configured, setupError, parent }: Omit<Prop
   }
 
   return <section className="mt-5 space-y-5"><div className="flex flex-col justify-between gap-4 sm:flex-row"><div><h2 className="text-xl font-semibold text-slate-950">{config.title}</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{config.description}</p></div><div className="flex shrink-0 flex-wrap gap-2">{canImport && <SpreadsheetImportButton entity={entity} disabled={loading} onImported={() => { setPage(0); setQuery(""); setSearch(""); void refresh(); }} />}{canCreate && <Button onClick={() => setEditor({ row: null })}><Plus />Create {config.singular}</Button>}</div></div>
+    {entity === "attendance_records" && <TodayAttendanceSummary configured={configured} />}
     {config.createNotice && <p className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900">{config.createNotice}</p>}
     {canImport && config.importNotice && <p className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"><span className="font-medium">Spreadsheet format: </span>{config.importNotice}</p>}
     {!configured && <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Database not connected. Set the Supabase environment variables, apply all migrations, and sign in to create and manage records. Saves are disabled until setup is complete.</p>}

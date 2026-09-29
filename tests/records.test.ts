@@ -8,6 +8,7 @@ const admin = "00000000-0000-4000-8000-000000000001";
 const reviewer = "00000000-0000-4000-8000-000000000002";
 const worker = "00000000-0000-4000-8000-000000000003";
 const outsider = "00000000-0000-4000-8000-000000000004";
+const systemAdmin = "00000000-0000-4000-8000-000000000006";
 type Row = { id: string; updated_at: string; [key: string]: unknown };
 
 test("server validation rejects invalid values and client-supplied protected fields", () => {
@@ -33,12 +34,13 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       alter default privileges in schema public grant all on tables to authenticated,anon;
       alter default privileges in schema public grant usage,select on sequences to authenticated;
     `);
-    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql", "202609150001_automatic_attendance_scoring.sql", "202609190001_configurable_payroll_policy.sql", "202609220001_hr2_finance_workflows.sql", "202609230001_analytics_accuracy.sql", "202609290001_email_otp_mfa.sql", "202609290002_custom_email_otp.sql", "202609290003_remove_email_otp_hourly_limit.sql"]) {
+    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql", "202609150001_automatic_attendance_scoring.sql", "202609190001_configurable_payroll_policy.sql", "202609220001_hr2_finance_workflows.sql", "202609230001_analytics_accuracy.sql", "202609290001_email_otp_mfa.sql", "202609290002_custom_email_otp.sql", "202609290003_remove_email_otp_hourly_limit.sql", "202609290004_today_attendance_snapshot.sql", "202609290005_today_active_employee_roster.sql", "202609290006_include_demo_employees_in_today_roster.sql", "202609290007_allow_nonpayroll_demo_attendance.sql", "202609290008_use_existing_payroll_employee_roster.sql", "202609290009_attendance_department_filters.sql", "202609290010_exclude_system_admins_from_attendance.sql"]) {
       // PGlite includes gen_random_uuid in core, but not the optional pgcrypto extension.
       const sql = (await readFile(new URL(`../scripts/supabase/migrations/${file}`, import.meta.url), "utf8")).replace("create extension if not exists pgcrypto;", "");
       await db.exec(sql);
     }
-    for (const id of [admin, reviewer, worker, outsider]) {
+    await db.exec("grant all privileges on all tables in schema public to service_role");
+    for (const id of [admin, reviewer, worker, outsider, systemAdmin]) {
       await db.query("insert into auth.users(id) values ($1)", [id]);
     }
     await db.exec("set role service_role");
@@ -106,6 +108,37 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
         assert.equal(await issue(outsider, outsider, correctHash), "issued");
       }
       await db.exec("reset role");
+    });
+    await t.test("today attendance snapshot returns today's authorized payroll records", async () => {
+      await db.exec("set role service_role");
+      await db.query("insert into public.profiles(id,employee_number,first_name,last_name,email,job_title,is_payroll_employee) values ($1,'SYSTEM-ADMIN','System','Admin','system-admin@example.com','System Administrator',true)", [systemAdmin]);
+      await db.query("insert into public.user_roles(user_id,role) values ($1,'super_admin')", [systemAdmin]);
+      await db.exec("reset role");
+      await db.exec("set role service_role");
+      await db.query(
+        "insert into public.attendance_records(employee_id,external_id,attendance_date,time_in,time_out,classification,late_minutes,source_updated_at) values ($1,'TODAY-LATE', (now() at time zone 'Asia/Manila')::date,now(),null,'late',12,now()),($2,'TODAY-ABSENT',(now() at time zone 'Asia/Manila')::date,null,null,'absent',0,now())",
+        [worker, outsider],
+      );
+      await db.exec("reset role");
+      await as(admin);
+      const result = await db.query<{ value: { date: string; expectedCount: number; records: Array<{ employeeNumber: string; classification: string; timeIn: string | null; timeOut: string | null; hasAttendance: boolean; departmentName: string | null }> } }>(
+        "select public.today_attendance_snapshot() value",
+      );
+      const snapshot = result.rows[0].value;
+      assert.equal(snapshot.date, (await db.query<{ date: string }>("select (now() at time zone 'Asia/Manila')::date::text date")).rows[0].date);
+      assert.equal(snapshot.expectedCount, 3);
+      assert.ok(snapshot.records.every((record) => record.employeeNumber !== "SYSTEM-ADMIN"));
+      assert.deepEqual(snapshot.records.map(({ employeeNumber, classification, timeIn, timeOut, hasAttendance, departmentName }) => ({ employeeNumber, classification, hasClockIn: timeIn !== null, hasClockOut: timeOut !== null, hasAttendance, departmentName })).sort((a, b) => a.employeeNumber.localeCompare(b.employeeNumber)), [
+        { employeeNumber: "EMP", classification: "late", hasClockIn: true, hasClockOut: false, hasAttendance: true, departmentName: null },
+        { employeeNumber: "HR", classification: "no_record", hasClockIn: false, hasClockOut: false, hasAttendance: false, departmentName: null },
+        { employeeNumber: "OTHER", classification: "absent", hasClockIn: false, hasClockOut: false, hasAttendance: true, departmentName: null },
+      ]);
+      await db.exec("set role service_role");
+      await db.query("delete from public.attendance_records where external_id in ('TODAY-LATE','TODAY-ABSENT')");
+      await db.query("delete from public.user_roles where user_id=$1 and role='super_admin'", [systemAdmin]);
+      await db.query("delete from public.profiles where id=$1", [systemAdmin]);
+      await db.exec("reset role");
+      await db.query("delete from auth.users where id=$1", [systemAdmin]);
     });
     await t.test("privileged operations require session-bound email OTP", async () => {
       await as(admin, false);

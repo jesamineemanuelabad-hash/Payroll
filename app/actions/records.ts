@@ -47,6 +47,45 @@ export async function readRecords(input: unknown): Promise<Result<{ rows: Record
   } catch { return { ok: false, message: "Unable to reach the database. Try again." }; }
 }
 
+const todayAttendanceSnapshotSchema = z.object({
+  date: z.string().date(),
+  expectedCount: z.number().int().nonnegative(),
+  records: z.array(z.object({
+    id: z.string().uuid(),
+    employeeId: z.string().uuid(),
+    employeeNumber: z.string(),
+    employeeName: z.string(),
+    departmentId: z.string().uuid().nullable(),
+    departmentName: z.string().nullable(),
+    classification: z.enum(["on_time", "late", "absent", "overtime", "on_leave", "no_record"]),
+    timeIn: z.string().nullable(),
+    timeOut: z.string().nullable(),
+    lateMinutes: z.number().int().nonnegative(),
+    hasAttendance: z.boolean(),
+  })),
+});
+
+export type TodayAttendanceSnapshot = z.infer<typeof todayAttendanceSnapshotSchema>;
+
+export async function readTodayAttendance(): Promise<Result<TodayAttendanceSnapshot>> {
+  if (!hasSupabaseEnvironment()) return { ok: false, message: "Connect Supabase to view today's attendance." };
+  try {
+    const db = await createSupabaseServerClient();
+    const { data: auth } = await db.auth.getUser();
+    if (!auth.user) return { ok: false, message: "Your session expired. Sign in again." };
+    const { data, error } = await db.rpc("today_attendance_snapshot", {});
+    if (error) {
+      if (error.code === "PGRST202") return { ok: false, message: "Apply migration 202609290004_today_attendance_snapshot.sql to enable today's attendance." };
+      return { ok: false, message: databaseMessage(error) };
+    }
+    const parsed = todayAttendanceSnapshotSchema.safeParse(data);
+    if (!parsed.success) return { ok: false, message: "Today's attendance data could not be read. Check the attendance migration." };
+    return { ok: true, data: parsed.data };
+  } catch {
+    return { ok: false, message: "Unable to load today's attendance. Try again." };
+  }
+}
+
 export async function saveRecord(input: unknown): Promise<Result<RecordRow>> {
   const parsed = z.object({ entity: z.string().refine((key) => Object.hasOwn(entities, key)), id: z.string().uuid().optional(), version: z.string().datetime({ offset: true }).optional(), values: z.record(z.string(), z.unknown()) }).strict().safeParse(input);
   if (!parsed.success) return { ok: false, message: "Invalid record request." };
