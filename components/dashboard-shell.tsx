@@ -92,7 +92,7 @@ function SidebarContent({ collapsed, onNavigate, userEmail, roles }: { collapsed
         {showOverview && <Link href="/overview" className={cn("relative flex h-9 w-full items-center rounded-lg text-sm transition", collapsed ? "justify-center" : "gap-3 px-2.5", pathname === "/overview" ? "bg-indigo-50 font-medium text-indigo-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")} aria-label="Overview" title={collapsed ? "Overview" : undefined} onClick={onNavigate}>
           {pathname === "/overview" && !collapsed && <span className="absolute -left-0 h-5 w-0.5 rounded-r bg-indigo-600" />}
           <LayoutDashboard className="size-[18px] shrink-0" />
-          {!collapsed && <span>Overview</span>}
+          {!collapsed && <span>Dashboard</span>}
         </Link>}
         <Link href="/payroll-benefits/people" className={cn("relative mt-0.5 flex h-9 w-full items-center rounded-lg text-sm transition", collapsed ? "justify-center" : "gap-3 px-2.5", peopleActive ? "bg-indigo-50 font-medium text-indigo-700" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900")} aria-label="People" title={collapsed ? "People" : undefined} onClick={onNavigate}>
           {peopleActive && !collapsed && <span className="absolute -left-3 h-5 w-0.5 rounded-r bg-indigo-600" />}
