@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "next typegen && tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
+    "seed:compensation-proposals": "node --import=tsx scripts/seed-compensation-proposals.ts",
     "test:ui": "playwright test"
   },
   "dependencies": {

@@ -1,7 +1,9 @@
 import { RecordWorkspace } from "@/components/records/record-workspace";
 import { createSupabaseServerClient, hasSupabaseEnvironment } from "@/lib/supabase/server";
 
-export async function RecordPage({ entityKeys, parent }: { entityKeys: readonly string[]; parent?: string }) {
+export type RecordPageAccess = { roles: string[]; configured: boolean; setupError?: string };
+
+export async function getRecordPageAccess(): Promise<RecordPageAccess> {
   const configured = hasSupabaseEnvironment();
   let roles: string[] = [];
   let setupError: string | undefined;
@@ -11,5 +13,10 @@ export async function RecordPage({ entityKeys, parent }: { entityKeys: readonly 
     if (error) setupError = "Role lookup failed. Apply all migrations and provision your profile and role assignment.";
     else roles = data ?? [];
   }
-  return <RecordWorkspace entityKeys={entityKeys} parent={parent} roles={roles} configured={configured} setupError={setupError} />;
+  return { roles, configured, setupError };
+}
+
+export async function RecordPage({ entityKeys, parent }: { entityKeys: readonly string[]; parent?: string }) {
+  const access = await getRecordPageAccess();
+  return <RecordWorkspace entityKeys={entityKeys} parent={parent} {...access} />;
 }

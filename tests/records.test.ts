@@ -23,6 +23,8 @@ test("leave approvals are hidden from Employee Management while leave records re
   assert.deepEqual(modules.attendance, ["profiles", "attendance_records", "departments"]);
   assert.ok(entities.leave_requests);
   assert.ok(entities.leave_requests.fields.some((field) => field.key === "is_paid"));
+  assert.deepEqual(modules.credentials, ["job_position_credential_criteria", "job_positions", "departments"]);
+  assert.equal(entities.job_position_credential_criteria.title, "Position credentials");
 });
 
 test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t) => {
@@ -41,11 +43,15 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       alter default privileges in schema public grant all on tables to authenticated,anon;
       alter default privileges in schema public grant usage,select on sequences to authenticated;
     `);
-    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql", "202609150001_automatic_attendance_scoring.sql", "202609190001_configurable_payroll_policy.sql", "202609220001_hr2_finance_workflows.sql", "202609230001_analytics_accuracy.sql", "202609290001_email_otp_mfa.sql", "202609290002_custom_email_otp.sql", "202609290003_remove_email_otp_hourly_limit.sql", "202609290004_today_attendance_snapshot.sql", "202609290005_today_active_employee_roster.sql", "202609290006_include_demo_employees_in_today_roster.sql", "202609290007_allow_nonpayroll_demo_attendance.sql", "202609290008_use_existing_payroll_employee_roster.sql", "202609290009_attendance_department_filters.sql", "202609290010_exclude_system_admins_from_attendance.sql", "202609290011_attendance_history_views.sql", "202609300012_department_cards_snapshot.sql", "202609300013_department_cards_simplify.sql", "202609300014_organization_position_catalog.sql", "202609300015_demo_employee_numbers_and_september_attendance.sql", "202609300016_hmo_benefits_management.sql", "202609300017_remove_unconfirmed_hmo_allocation.sql", "202609300018_hmo_salary_bands_and_budget_estimates.sql", "202609300019_hmo_provider_directory.sql"]) {
+    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql", "202609150001_automatic_attendance_scoring.sql", "202609190001_configurable_payroll_policy.sql", "202609220001_hr2_finance_workflows.sql", "202609230001_analytics_accuracy.sql", "202609290001_email_otp_mfa.sql", "202609290002_custom_email_otp.sql", "202609290003_remove_email_otp_hourly_limit.sql", "202609290004_today_attendance_snapshot.sql", "202609290005_today_active_employee_roster.sql", "202609290006_include_demo_employees_in_today_roster.sql", "202609290007_allow_nonpayroll_demo_attendance.sql", "202609290008_use_existing_payroll_employee_roster.sql", "202609290009_attendance_department_filters.sql", "202609290010_exclude_system_admins_from_attendance.sql", "202609290011_attendance_history_views.sql", "202609300012_department_cards_snapshot.sql", "202609300013_department_cards_simplify.sql", "202609300014_organization_position_catalog.sql", "202609300015_demo_employee_numbers_and_september_attendance.sql", "202609300016_hmo_benefits_management.sql", "202609300017_remove_unconfirmed_hmo_allocation.sql", "202609300018_hmo_salary_bands_and_budget_estimates.sql", "202609300019_hmo_provider_directory.sql", "202609300020_compensation_planning.sql", "202610010001_seed_demo_credentials.sql", "202610010002_credentials_record_workflows.sql", "202610010003_remove_demo_position_criteria.sql"]) {
       // PGlite includes gen_random_uuid in core, but not the optional pgcrypto extension.
       const sql = (await readFile(new URL(`../scripts/supabase/migrations/${file}`, import.meta.url), "utf8")).replace("create extension if not exists pgcrypto;", "");
       await db.exec(sql);
     }
+    const rejectionReasonMigration = await readFile(new URL("../scripts/supabase/migrations/202610010004_salary_proposal_rejection_reason.sql", import.meta.url), "utf8");
+    await db.exec(rejectionReasonMigration);
+    const simulationActorsMigration = await readFile(new URL("../scripts/supabase/migrations/202610010005_compensation_simulation_actors.sql", import.meta.url), "utf8");
+    await db.exec(simulationActorsMigration);
     await db.exec("grant all privileges on all tables in schema public to service_role");
     for (const id of [admin, reviewer, worker, outsider, systemAdmin]) {
       await db.query("insert into auth.users(id) values ($1)", [id]);
@@ -319,6 +325,106 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       assert.equal(salary.rows[0].effective_from.toISOString().slice(0,10),"2026-10-01");
       assert.equal(salary.rows[0].source,"compensation_review");
     });
+    await t.test("salary proposals require and retain rejection reasons", async () => {
+      const cycle = await create("compensation_cycles", { name: "Rejection Review", starts_on: "2026-09-01", ends_on: "2026-09-30", budget: 50000, status: "draft" });
+      const proposal = await create("compensation_reviews", { employee_id: worker, cycle_id: cycle.id, current_salary: 32000, proposed_salary: 34000, bonus: 0, effective_date: "2026-10-01", justification: "Test rejection workflow", status: "draft" });
+      const pending = await update("compensation_reviews", proposal, { status: "pending" });
+      await as(reviewer);
+      const hrReview = await update("compensation_reviews", pending, { status: "hr_review" });
+      await assert.rejects(update("compensation_reviews", hrReview, { status: "rejected" }), /rejection reason is required/i);
+      const rejected = await update("compensation_reviews", hrReview, { status: "rejected", rejection_reason: "The supporting rationale needs revision." });
+      assert.equal(rejected.rejection_reason, "The supporting rationale needs revision.");
+      const simulationCycle = await create("compensation_cycles", { name: "Simulation actors", starts_on: "2026-09-01", ends_on: "2026-09-30", budget: 50000, status: "draft" });
+      const simulationProposal = await create("compensation_reviews", {
+        employee_id: worker,
+        cycle_id: simulationCycle.id,
+        current_salary: 32000,
+        proposed_salary: 34000,
+        bonus: 0,
+        effective_date: "2026-10-01",
+        justification: "[Workflow simulation] Test persona attribution.",
+        status: "draft",
+      });
+      await db.exec("reset role");
+      await db.query("select set_config('request.jwt.claim.role','service_role',false)");
+      await db.exec("set role service_role");
+      await db.query("update public.compensation_reviews set simulation_submitter='[Simulation] HR Submitter 1' where id=$1", [simulationProposal.id]);
+      const simulationActor = await db.query<{ simulation_submitter: string }>("select simulation_submitter from public.compensation_reviews where id=$1", [simulationProposal.id]);
+      assert.equal(simulationActor.rows[0].simulation_submitter, "[Simulation] HR Submitter 1");
+      await assert.rejects(db.query("update public.compensation_reviews set simulation_submitter='Real-looking account' where id=$1", [simulationProposal.id]), /compensation_reviews_simulation_actors_labeled/);
+      await db.exec("reset role");
+      await as(admin);
+    });
+    await t.test("compensation planning records credentials and matches criteria to positions", async () => {
+      await db.exec("set role service_role");
+      const department = await db.query<{ id: string }>("insert into public.departments(name,code) values ('Operations','OPS') returning id");
+      const position = await db.query<{ id: string }>("insert into public.job_positions(department_id,title,salary_min,salary_max) values ($1,'Tester',30000,50000) returning id", [department.rows[0].id]);
+      await db.query("update public.profiles set department_id=$1 where id=$2", [department.rows[0].id, worker]);
+      await db.exec("reset role");
+      await as(admin);
+      const credential = await db.query<{ value: { id: string; credential_name: string; verification_status: string } }>(
+        "select public.save_employee_credential($1,'Forklift Operator Certificate','TESDA',current_date-30,null,'verified','Verified against submitted proof') value",
+        [worker],
+      );
+      assert.equal(credential.rows[0].value.verification_status, "verified");
+      const criterion = await db.query<{ value: { id: string; credential_name: string; criterion_type: string } }>(
+        "select public.save_position_credential_criterion($1,'Forklift Operator Certificate','required','Current credential required') value",
+        [position.rows[0].id],
+      );
+      assert.equal(criterion.rows[0].value.criterion_type, "required");
+      const snapshot = await db.query<{
+        value: {
+          employees: Array<{
+            id: string;
+            positionId: string;
+            credentials: Array<{ name: string; verificationStatus: string }>;
+            criteria: Array<{ credentialName: string; criterionType: string }>;
+          }>;
+          cycles: Array<{ id: string; status: string }>;
+        };
+      }>(
+        "select public.compensation_planning_snapshot() value",
+      );
+      const employee = snapshot.rows[0].value.employees.find((item) => item.id === worker);
+      assert.ok(employee);
+      assert.equal(employee.positionId, position.rows[0].id);
+      assert.ok(employee.credentials.some((item) => item.name === "Forklift Operator Certificate" && item.verificationStatus === "verified"));
+      assert.ok(employee.criteria.some((item) => item.credentialName === "Forklift Operator Certificate" && item.criterionType === "required"));
+      assert.ok(snapshot.rows[0].value.cycles.some((item) => item.status === "draft"));
+      const listedPositions = await read("job_positions");
+      assert.ok(listedPositions.rows.some((item) => item.id === position.rows[0].id));
+      const listedCriteria = await read("job_position_credential_criteria");
+      assert.ok(listedCriteria.rows.some((item) => item.job_position_id === position.rows[0].id));
+      const insertedCriterion = await create("job_position_credential_criteria", {
+        job_position_id: position.rows[0].id,
+        credential_name: "HR-created test criterion",
+        criterion_type: "preferred",
+        notes: "Created through the credentials workspace",
+      });
+      assert.ok(insertedCriterion.updated_at);
+      assert.equal(insertedCriterion.created_by, admin);
+      const updatedCriterion = await update("job_position_credential_criteria", insertedCriterion, { notes: "Updated through the credentials workspace" });
+      assert.equal(updatedCriterion.notes, "Updated through the credentials workspace");
+      await as(outsider);
+      await assert.rejects(db.query("select public.compensation_planning_snapshot()"), /Only HR administrators/i);
+      assert.equal((await read("job_position_credential_criteria")).count, 0);
+      await assert.rejects(create("job_position_credential_criteria", {
+        job_position_id: position.rows[0].id,
+        credential_name: "Unauthorized",
+        criterion_type: "preferred",
+      }), /Your role cannot change these records/i);
+      await as(admin);
+
+      await db.exec("reset role");
+      await db.query("select set_config('request.jwt.claim.role','service_role',false)");
+      await db.exec("set role service_role");
+      await db.query("insert into public.departments(name,code) values ('Engineering','ENG')");
+      const engineering = await db.query<{ id: string }>("select id from public.departments where code='ENG'");
+      await db.query("insert into public.job_positions(department_id,title,salary_min) values ($1,'Senior Engineer',50000)", [engineering.rows[0].id]);
+      const seedFunction = await db.query<{ function_name: string | null }>("select to_regprocedure('public.seed_demo_credentials()')::text as function_name");
+      assert.equal(seedFunction.rows[0].function_name, null);
+      await as(admin);
+    });
     await t.test("benefit providers, all plan categories, and enrollments persist", async () => {
       created.benefit_providers = await create("benefit_providers", { name: "Test Provider" });
       created.benefit_providers = await update("benefit_providers", created.benefit_providers, { name: "Updated Provider" });
@@ -344,7 +450,11 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       ]);
       const workerRecord = initial.rows[0].value.employees.find((item) => item.id === worker);
       assert.equal(workerRecord?.eligible, true);
-      assert.equal(workerRecord?.currentMonthlySalary, 32000);
+      const currentSalary = await db.query<{ value: number }>(
+        "select base_salary::float8 value from public.employee_compensation_history where employee_id=$1 and effective_from<=current_date and (effective_to is null or effective_to>=current_date) order by effective_from desc limit 1",
+        [worker],
+      );
+      assert.equal(workerRecord?.currentMonthlySalary, currentSalary.rows[0].value);
       assert.equal(initial.rows[0].value.packages.find((item) => item.id === workerRecord?.recommendedPackageId)?.tier, "Standard Plus");
       assert.equal(initial.rows[0].value.policy.employerSharePercent, 100);
       assert.deepEqual(initial.rows[0].value.providers.map((provider) => provider.name), ["Intellicare", "Maxicare", "Updated Provider", "iCare"]);

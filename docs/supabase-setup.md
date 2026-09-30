@@ -39,7 +39,13 @@ Apply these files in order in the Supabase SQL editor (or your migration pipelin
 31. `scripts/supabase/migrations/202609300017_remove_unconfirmed_hmo_allocation.sql`
 32. `scripts/supabase/migrations/202609300018_hmo_salary_bands_and_budget_estimates.sql`
 33. `scripts/supabase/migrations/202609300019_hmo_provider_directory.sql`
-34. `scripts/supabase/seed.sql` (optional department/provider/plan catalog)
+34. `scripts/supabase/migrations/202609300020_compensation_planning.sql`
+35. `scripts/supabase/migrations/202610010001_seed_demo_credentials.sql`
+36. `scripts/supabase/migrations/202610010002_credentials_record_workflows.sql`
+37. `scripts/supabase/migrations/202610010003_remove_demo_position_criteria.sql`
+38. `scripts/supabase/migrations/202610010004_salary_proposal_rejection_reason.sql`
+39. `scripts/supabase/migrations/202610010005_compensation_simulation_actors.sql`
+40. `scripts/supabase/seed.sql` (optional department/provider/plan catalog)
 
 Apply only migrations that have not already run. Do not rerun existing migrations. Back up any existing live data before changing its schema. The CRUD migration restricts authenticated direct table writes; application writes use validated RPCs. The operational workflow migration immediately denies terminated profiles at the database layer and adds payroll state transitions plus automatic compensation application.
 
@@ -54,6 +60,12 @@ Migration `202609300012_department_cards_snapshot.sql` enables the department ca
 Migration `202609300016_hmo_benefits_management.sql` adds HMO package tiers and HR-managed enrollment details. Migration `202609300017_remove_unconfirmed_hmo_allocation.sql` clears the accidental ₱6,500 placeholder. Migration `202609300018_hmo_salary_bands_and_budget_estimates.sql` adds salary-based tier recommendations and initial annual premium planning estimates (Standard ₱6,000, Standard Plus ₱12,000, Premium ₱24,000, Executive ₱36,000). These are capstone planning assumptions, not insurer quotes. Premium estimates and salary ranges are stored as planning data and do not affect payroll calculations.
 
 Migration `202609300019_hmo_provider_directory.sql` adds name-only Maxicare, Intellicare, and iCare provider directory entries if absent, without inventing contact details or linking a provider to a package tier. The HMO screen separates employee enrollment, package tiers, and providers into tabs. No projected annual employer budget is displayed. Provider entries do not represent a confirmed contract or quote.
+
+Migration `202609300020_compensation_planning.sql` adds HR-managed employee credential records and required/preferred credential criteria for catalog positions, with audit logging and an HR-only planning snapshot. The compensation planner compares current effective base pay, converted to a monthly equivalent (semi-monthly × 2, daily × 22, hourly × 176), against the position’s configured salary band. Those conversions are planning comparisons only; they do not alter contractual pay or payroll calculations. A credential only satisfies a criterion when it is verified and not expired. The planner does not make automatic pay or hiring decisions. HR can draft a proposal from an employee’s current pay basis; the Salary Proposals tab displays saved proposals and advances them through the existing HR and Finance review workflow. Rejections require a recorded reason. Only Finance approval and implementation create an effective-dated salary-history row.
+
+To populate an explicitly labeled workflow simulation using existing active employees with current salary records, run `npm run seed:compensation-proposals` for a dry run, then `npm run seed:compensation-proposals -- --apply` to write six pending, six rejected, and six approved-but-unimplemented proposals. Simulation reviewer personas are labeled `[Simulation]` on the proposal; they are not auth users and receive no account or role. Only the existing active Super Admin who creates the cycle is recorded as its actual creator. These simulation proposals are not real compensation decisions and must not be implemented. Approved proposals do not affect salary history or payroll until a separate implementation action.
+
+Migrations `202610010001_seed_demo_credentials.sql` and `202610010002_credentials_record_workflows.sql` register job positions and position criteria with the authenticated record workflow. Apply both migrations even if the earlier compensation-planning migration is already installed. Migration `202610010003_remove_demo_position_criteria.sql` removes only position criteria explicitly marked with the old `Demo suggestion;` note and retires the demo-seed function; it does not change employee-held credential records. Migration `202610010004_salary_proposal_rejection_reason.sql` adds a required reason to new salary proposal rejections. HR should enter the actual position requirements in Compensation Planning → Position Criteria and record employee credentials only after reviewing evidence. Compensation cycles are managed in their own tab, proposals are drafted in Salary Planning, and proposal review takes place in Salary Proposals.
 
 ## 2. Provision the initial administrator
 

@@ -27,6 +27,9 @@ function databaseMessage(error: { code?: string; message: string }) {
   if (error.code === "23505") return "A record with this reference or employee/period combination already exists.";
   if (error.code === "23503") return "A related record is missing or still references this record. Check the employee/Auth account, or deactivate the record instead of deleting it.";
   if (error.code === "42501") return "Your account does not have permission for this operation.";
+  if (error.code === "22023" && /unknown record type/i.test(error.message)) {
+    return "The database does not recognize position criteria yet. Apply migration 202610010002_credentials_record_workflows.sql, then refresh.";
+  }
   if (error.code === "PGRST202" || error.code === "42P01") return "Database setup is incomplete. Apply all migrations, including 202609050001_record_crud.sql.";
   if (error.code === "23514" || error.code === "23502" || error.code === "22P02") return "Review required fields, dates, and amounts. The database rejected an invalid value.";
   return error.message;
@@ -73,6 +76,7 @@ export async function readDepartmentCards(): Promise<Result<DepartmentCardData[]
     if (!roles?.some((role) => ["super_admin", "hr_admin"].includes(role))) {
       return { ok: false, message: "Only HR administrators can view department summaries." };
     }
+
     const { data, error } = await db.rpc("department_cards_snapshot", {});
     if (error) return { ok: false, message: error.code === "PGRST202" ? "Apply migration 202609300012_department_cards_snapshot.sql to enable department cards." : databaseMessage(error) };
     const parsed = departmentCardsSchema.safeParse(data);
@@ -81,6 +85,129 @@ export async function readDepartmentCards(): Promise<Result<DepartmentCardData[]
   } catch {
     return { ok: false, message: "Unable to load department summaries. Try again." };
   }
+}
+
+const compensationPlanningSchema = z.object({
+  employees: z.array(z.object({
+    id: z.string().uuid(),
+    employeeNumber: z.string(),
+    name: z.string(),
+    department: z.string().nullable(),
+    position: z.string(),
+    positionId: z.string().uuid().nullable(),
+    salaryAmount: z.number().nullable(),
+    salaryFrequency: z.enum(["monthly", "semi_monthly", "daily", "hourly"]).nullable(),
+    monthlySalary: z.number().nullable(),
+    salaryMin: z.number().nullable(),
+    salaryMax: z.number().nullable(),
+    salaryMaxOpen: z.boolean().nullable(),
+    credentials: z.array(z.object({
+      id: z.string().uuid(),
+      name: z.string(),
+      issuingOrganization: z.string().nullable(),
+      earnedOn: z.string().nullable(),
+      expiresOn: z.string().nullable(),
+      verificationStatus: z.enum(["pending", "verified", "rejected"]),
+    })),
+    criteria: z.array(z.object({
+      id: z.string().uuid(),
+      credentialName: z.string(),
+      criterionType: z.enum(["required", "preferred"]),
+      notes: z.string().nullable(),
+    })),
+  })),
+  positions: z.array(z.object({
+    id: z.string().uuid(),
+    title: z.string(),
+    department: z.string(),
+  })),
+  cycles: z.array(z.object({
+    id: z.string().uuid(),
+    name: z.string(),
+    startsOn: z.string().date(),
+    endsOn: z.string().date(),
+    status: z.enum(["draft", "active"]),
+  })),
+});
+
+export type CompensationPlanningSnapshot = z.infer<typeof compensationPlanningSchema>;
+
+async function compensationAction<T>(rpc: "compensation_planning_snapshot" | "save_employee_credential" | "save_position_credential_criterion", args: Record<string, unknown>, schema: z.ZodType<T>): Promise<Result<T>> {
+  if (!hasSupabaseEnvironment()) return { ok: false, message: "Connect Supabase and apply migration 202609300020_compensation_planning.sql before managing compensation planning." };
+  try {
+    const db = await createSupabaseServerClient();
+    const { data: auth } = await db.auth.getUser();
+    if (!auth.user) return { ok: false, message: "Your session expired. Sign in again." };
+    const { data: roles, error: rolesError } = await db.rpc("record_roles", {});
+    if (rolesError) return { ok: false, message: databaseMessage(rolesError) };
+    if (!roles?.some((role) => ["super_admin", "hr_admin"].includes(role))) {
+      return { ok: false, message: "Only HR administrators can manage compensation planning." };
+    }
+    const { data, error } = await db.rpc(rpc, args as never);
+    if (error) return { ok: false, message: error.code === "PGRST202" ? "Apply migration 202609300020_compensation_planning.sql to enable compensation planning." : databaseMessage(error) };
+    const parsed = schema.safeParse(data);
+    if (!parsed.success) return { ok: false, message: "Compensation planning data could not be read. Check the compensation migration." };
+    if (rpc !== "compensation_planning_snapshot") revalidatePath("/", "layout");
+    return { ok: true, data: parsed.data };
+  } catch {
+    return { ok: false, message: "Unable to reach the database. Try again." };
+  }
+}
+
+export async function readCompensationPlanning(): Promise<Result<CompensationPlanningSnapshot>> {
+  return compensationAction("compensation_planning_snapshot", {}, compensationPlanningSchema);
+}
+
+const savedCredentialSchema = z.object({
+  id: z.string().uuid(),
+  employee_id: z.string().uuid(),
+  credential_name: z.string(),
+});
+
+export async function saveEmployeeCredential(input: unknown): Promise<Result<z.infer<typeof savedCredentialSchema>>> {
+  const parsed = z.object({
+    employeeId: z.string().uuid(),
+    credentialName: z.string().trim().min(2).max(160),
+    issuingOrganization: z.string().trim().max(160).nullable(),
+    earnedOn: z.string().date().nullable(),
+    expiresOn: z.string().date().nullable(),
+    verificationStatus: z.enum(["pending", "verified", "rejected"]),
+    notes: z.string().trim().max(1000).nullable(),
+  }).strict().safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Enter valid employee credential details." };
+  const value = parsed.data;
+  return compensationAction("save_employee_credential", {
+    p_employee_id: value.employeeId,
+    p_credential_name: value.credentialName,
+    p_issuing_organization: value.issuingOrganization,
+    p_earned_on: value.earnedOn,
+    p_expires_on: value.expiresOn,
+    p_verification_status: value.verificationStatus,
+    p_notes: value.notes,
+  }, savedCredentialSchema);
+}
+
+const savedCriterionSchema = z.object({
+  id: z.string().uuid(),
+  job_position_id: z.string().uuid(),
+  credential_name: z.string(),
+});
+
+export async function savePositionCredentialCriterion(input: unknown): Promise<Result<z.infer<typeof savedCriterionSchema>>> {
+  const parsed = z.object({
+    positionId: z.string().uuid(),
+    credentialName: z.string().trim().min(2).max(160),
+    criterionType: z.enum(["required", "preferred"]),
+    notes: z.string().trim().max(1000).nullable(),
+  }).strict().safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Enter valid position credential criteria." };
+  const value = parsed.data;
+  return compensationAction("save_position_credential_criterion", {
+    p_job_position_id: value.positionId,
+    p_credential_name: value.credentialName,
+    p_criterion_type: value.criterionType,
+    p_notes: value.notes,
+  }, savedCriterionSchema);
 }
 
 const todayAttendanceSnapshotSchema = z.object({
