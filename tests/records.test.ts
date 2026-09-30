@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
+import { entities, modules } from "../lib/records/config";
 import { recordSchema } from "../lib/records/validation";
 
 const admin = "00000000-0000-4000-8000-000000000001";
@@ -16,6 +17,12 @@ test("server validation rejects invalid values and client-supplied protected fie
   assert.equal(recordSchema("payroll_runs", true).safeParse({ period_start: "2026-09-01", period_end: "2026-09-15", pay_date: "2026-09-20", total_net: 100 }).success, false);
   assert.equal(recordSchema("departments", true).safeParse({ name: "Finance", code: "fin" }).success, false);
   assert.equal(recordSchema("departments", true).safeParse({ name: "Finance", code: "FIN" }).success, true);
+});
+
+test("leave approvals are hidden from Employee Management while leave records remain configured", () => {
+  assert.deepEqual(modules.attendance, ["profiles", "attendance_records", "departments"]);
+  assert.ok(entities.leave_requests);
+  assert.ok(entities.leave_requests.fields.some((field) => field.key === "is_paid"));
 });
 
 test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t) => {

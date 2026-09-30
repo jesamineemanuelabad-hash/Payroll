@@ -36,15 +36,6 @@ async function main() {
     throw new Error("Attendance sample seeding is disabled. Set ALLOW_ATTENDANCE_SAMPLE_SEED=true for this one run.");
   }
 
-  const hostname = new URL(url).hostname;
-  stdout.write(`This will replace today's attendance with varied sample data for all active payroll employees in ${hostname}.\n`);
-  stdout.write("Employee profiles and Auth users will not be created or changed. Every active payroll employee will receive a sample attendance record for today.\n");
-  stdout.write("Existing attendance for today will be overwritten. This is intended for capstone/demo data.\n");
-  const prompt = createInterface({ input: stdin, output: stdout });
-  const confirmation = await prompt.question('Type "replace today with sample attendance" to continue: ');
-  prompt.close();
-  if (confirmation !== "replace today with sample attendance") throw new Error("Attendance sample seed cancelled.");
-
   const admin = createClient(url, serviceRoleKey, { auth: { autoRefreshToken: false, persistSession: false } });
   const { data: administrators, error: administratorError } = await admin
     .from("user_roles")
@@ -64,11 +55,33 @@ async function main() {
   if (!roster.length) throw new Error("No active payroll employees were found in public.profiles.");
 
   const date = todayInManila();
+  const { data: existingAttendance, error: attendanceError } = await admin
+    .from("attendance_records")
+    .select("employee_id")
+    .eq("attendance_date", date)
+    .in("employee_id", roster.map((employee) => employee.id));
+  if (attendanceError) throw new Error(`Unable to check today's existing attendance: ${attendanceError.message}`);
+  const employeesWithAttendance = new Set((existingAttendance ?? []).map((record) => record.employee_id));
+  const missingAttendance = roster.filter((employee) => !employeesWithAttendance.has(employee.id));
+  if (!missingAttendance.length) {
+    stdout.write(`All ${roster.length} active payroll employees already have attendance records for ${date} (Asia/Manila). No data was changed.\n`);
+    return;
+  }
+
+  const hostname = new URL(url).hostname;
+  stdout.write(`This will add varied sample attendance for ${missingAttendance.length} existing active payroll employee(s) without a record today in ${hostname}.\n`);
+  stdout.write("Employee profiles and Auth users will not be created or changed. Existing attendance records will be left untouched.\n");
+  stdout.write("Sample attendance can affect payroll if included in a payroll run. This is intended for capstone/demo data.\n");
+  const prompt = createInterface({ input: stdin, output: stdout });
+  const confirmation = await prompt.question('Type "seed missing attendance today" to continue: ');
+  prompt.close();
+  if (confirmation !== "seed missing attendance today") throw new Error("Attendance sample seed cancelled.");
+
   let written = 0;
-  for (const [index, employee] of roster.entries()) {
+  for (const [index, employee] of missingAttendance.entries()) {
     const sample = sampleAttendance[index % sampleAttendance.length];
     const timeIn = (time: string | null) => time ? instantAtManila(date, time) : null;
-    const { error } = await admin.from("attendance_records").upsert({
+    const { error } = await admin.from("attendance_records").insert({
       employee_id: employee.id,
       external_id: `SAMPLE-ATT-${employee.employee_number}-${date}`,
       attendance_date: date,
@@ -85,13 +98,13 @@ async function main() {
       work_day_type: "ordinary",
       night_minutes: 0,
       source_updated_at: new Date().toISOString(),
-    }, { onConflict: "employee_id,attendance_date" });
-    if (error) throw new Error(`Unable to replace sample attendance for ${employee.employee_number}: ${error.message}`);
+    });
+    if (error) throw new Error(`Unable to add sample attendance for ${employee.employee_number}: ${error.message}`);
     written += 1;
     stdout.write(`Added sample ${sample.classification.replaceAll("_", " ")} attendance for ${employee.employee_number}.\n`);
   }
 
-  stdout.write(`Finished for ${date} (Asia/Manila): ${written} active payroll employee attendance record(s) replaced with sample data.\n`);
+  stdout.write(`Finished for ${date} (Asia/Manila): added ${written} sample attendance record(s); ${employeesWithAttendance.size} existing record(s) were left unchanged.\n`);
   stdout.write("Sample records use external IDs prefixed SAMPLE-ATT- so they can be identified and removed later.\n");
 }
 

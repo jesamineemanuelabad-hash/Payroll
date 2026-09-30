@@ -44,7 +44,7 @@ export const entities: Record<string, EntityConfig> = {
 
 export type RecordRow = { id: string; updated_at: string; [key: string]: string | number | boolean | null };
 export const modules = {
-  attendance: ["profiles", "attendance_records", "leave_requests", "departments"],
+  attendance: ["profiles", "attendance_records", "departments"],
   compensation: ["compensation_reviews", "compensation_cycles", "employee_compensation_history"],
   benefits: ["employee_benefits", "benefit_plans", "benefit_providers"],
   claims: ["claims"], payroll: ["payroll_runs", "employee_compensation_history", "payroll_validation_cases"],
