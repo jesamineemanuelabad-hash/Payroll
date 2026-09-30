@@ -11,6 +11,12 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["profiles"]["Row"]>;
         Relationships: [];
       };
+      job_positions: {
+        Row: { id:string; department_id:string; title:string; salary_min:number; salary_max:number|null; salary_max_open:boolean; created_at:string; updated_at:string };
+        Insert: Omit<Database["public"]["Tables"]["job_positions"]["Row"],"id"|"created_at"|"updated_at"> & { id?:string; created_at?:string; updated_at?:string };
+        Update: Partial<Database["public"]["Tables"]["job_positions"]["Insert"]>;
+        Relationships: [];
+      };
       payroll_runs: {
         Row: {
           id: string;
@@ -101,6 +107,9 @@ export type Database = {
       admin_access_snapshot: { Args: { p_search?: string }; Returns: Json };
       admin_update_user_access: { Args: { p_user_id:string; p_roles:string[]; p_department_ids:string[]; p_is_payroll_employee:boolean; p_employment_status:string }; Returns: Json };
       admin_create_invited_profile: { Args: { p_user_id:string; p_employee_number:string; p_first_name:string; p_last_name:string; p_email:string; p_job_title:string; p_department_id:string|null; p_initial_role:string }; Returns: Json };
+      seed_demo_org_structure: { Args: { p_departments:Json; p_positions:Json; p_employees:Json; p_effective_date:string }; Returns: Json };
+      normalize_demo_employee_numbers: { Args: { p_mappings:Json }; Returns: Json };
+      seed_demo_attendance_month: { Args: { p_month:string }; Returns: Json };
       lookup_records: { Args: { p_entity: string; p_ids: string[] }; Returns: Json };
       list_records: { Args: { p_entity: string; p_search?: string; p_page?: number; p_size?: number; p_parent?: string; p_id?: string }; Returns: Json };
       mutate_record: { Args: { p_entity: string; p_operation: string; p_data?: Json; p_id?: string; p_version?: string }; Returns: Json };

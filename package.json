@@ -10,6 +10,8 @@
     "typecheck": "next typegen && tsc --noEmit",
     "test": "tsx --test tests/*.test.ts",
     "seed:attendance-sample": "tsx scripts/seed-attendance-sample.ts",
+    "seed:org-chart": "tsx scripts/seed-organization-chart.ts",
+    "seed:september-attendance": "tsx scripts/seed-september-attendance.ts",
     "test:ui": "playwright test"
   },
   "dependencies": {

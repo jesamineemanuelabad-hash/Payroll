@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
+import { departmentSeeds, positionSeeds } from "../scripts/organization-chart-data";
 import { entities, modules } from "../lib/records/config";
 import { recordSchema } from "../lib/records/validation";
 
@@ -25,6 +26,153 @@ test("leave approvals are hidden from Employee Management while leave records re
   assert.ok(entities.leave_requests.fields.some((field) => field.key === "is_paid"));
 });
 
+test("organization demo seed creates the position catalog and minimum salary history idempotently", async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(`
+      create role anon nologin;
+      create role authenticated nologin;
+      create role service_role nologin bypassrls;
+      create schema auth;
+      create table auth.users(id uuid primary key,raw_user_meta_data jsonb not null default '{}'::jsonb);
+      create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true),'')::uuid $$;
+      create function auth.jwt() returns jsonb language sql stable as $$ select jsonb_build_object('sub',nullif(current_setting('request.jwt.claim.sub',true),''),'role',nullif(current_setting('request.jwt.claim.role',true),''),'aal','aal2','session_id','seed-test') $$;
+      grant usage on schema public,auth to authenticated,anon,service_role;
+      grant execute on function auth.uid() to authenticated,anon;
+      alter default privileges in schema public grant all on tables to authenticated,anon;
+      alter default privileges in schema public grant usage,select on sequences to authenticated;
+    `);
+    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql", "202609150001_automatic_attendance_scoring.sql", "202609190001_configurable_payroll_policy.sql", "202609220001_hr2_finance_workflows.sql", "202609230001_analytics_accuracy.sql", "202609290001_email_otp_mfa.sql", "202609290002_custom_email_otp.sql", "202609290003_remove_email_otp_hourly_limit.sql", "202609290004_today_attendance_snapshot.sql", "202609290005_today_active_employee_roster.sql", "202609290006_include_demo_employees_in_today_roster.sql", "202609290007_allow_nonpayroll_demo_attendance.sql", "202609290008_use_existing_payroll_employee_roster.sql", "202609290009_attendance_department_filters.sql", "202609290010_exclude_system_admins_from_attendance.sql", "202609290011_attendance_history_views.sql", "202609300012_department_cards_snapshot.sql", "202609300013_department_cards_simplify.sql", "202609300014_organization_position_catalog.sql", "202609300015_demo_employee_numbers_and_september_attendance.sql"]) {
+      const sql = (await readFile(new URL(`../scripts/supabase/migrations/${file}`, import.meta.url), "utf8")).replace("create extension if not exists pgcrypto;", "");
+      await db.exec(sql);
+    }
+    await db.exec("grant all privileges on all tables in schema public to service_role; grant all privileges on all sequences in schema public to service_role");
+    await db.query("insert into auth.users(id) values ($1)", [worker]);
+    await db.query(
+      "insert into public.profiles(id,employee_number,first_name,last_name,email,job_title) values ($1,'EXIST-001','Existing','Employee','existing@example.com','Former role')",
+      [worker],
+    );
+    await db.query(
+      "insert into public.employee_compensation_history(employee_id,base_salary,salary_frequency,effective_from,source) values ($1,30000,'monthly',current_date-30,'manual')",
+      [worker],
+    );
+    for (let index = 2; index <= positionSeeds.length; index += 1) {
+      const id = `10000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+      await db.query(
+        "insert into auth.users(id,raw_user_meta_data) values ($1,$2::jsonb)",
+        [id, JSON.stringify({ organization_chart_demo: true, employee_number: `DEMO-ORG-${String(index).padStart(3, "0")}` })],
+      );
+    }
+    await db.exec("select set_config('request.jwt.claim.role','service_role',false); set role service_role");
+    const employees = positionSeeds.map((position, index) => {
+      const employeeNumber = `DEMO-ORG-${String(index + 1).padStart(3, "0")}`;
+      return {
+        id: index === 0 ? worker : `10000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+        employeeNumber: index === 0 ? "EXIST-001" : employeeNumber,
+        firstName: index === 0 ? "Existing" : `Demo${index + 1}`,
+        lastName: "Employee",
+        email: index === 0 ? "existing@example.com" : `demo-org-${String(index + 1).padStart(3, "0")}@example.invalid`,
+        departmentCode: position.departmentCode,
+        jobTitle: position.title,
+        salaryMinimum: position.salaryMinimum,
+      };
+    });
+    const seedArgs = [
+      JSON.stringify(departmentSeeds.map(({ code, name }) => ({ code, name }))),
+      JSON.stringify(positionSeeds),
+      JSON.stringify(employees),
+    ];
+    const runSeed = () => db.query<{ value: { departments: number; positions: number; employees: number } }>(
+      "select public.seed_demo_org_structure($1::jsonb,$2::jsonb,$3::jsonb,current_date) value",
+      seedArgs,
+    );
+    const firstRun = await runSeed();
+    await db.exec("reset role");
+    assert.deepEqual(firstRun.rows[0].value, { departments: 12, positions: 98, employees: 98 });
+    const salary = await db.query<{ base_salary: string; effective_from: string }>(
+      "select base_salary,effective_from from public.employee_compensation_history where employee_id=$1 and effective_from=current_date",
+      [worker],
+    );
+    assert.equal(Number(salary.rows[0].base_salary), positionSeeds[0].salaryMinimum);
+    const previousSalary = await db.query<{ effective_to: string }>(
+      "select to_char(effective_to,'YYYY-MM-DD') effective_to from public.employee_compensation_history where employee_id=$1 and effective_from<current_date",
+      [worker],
+    );
+    const priorDate = await db.query<{ value: string }>("select to_char(current_date-1,'YYYY-MM-DD') value");
+    assert.equal(previousSalary.rows[0].effective_to, priorDate.rows[0].value);
+    const reassignedProfile = await db.query<{ first_name: string; job_title: string }>(
+      "select first_name,job_title from public.profiles where id=$1",
+      [worker],
+    );
+    assert.equal(reassignedProfile.rows[0].first_name, "Existing");
+    assert.equal(reassignedProfile.rows[0].job_title, positionSeeds[0].title);
+    const auditBeforeRepeat = await db.query<{ count: number }>("select count(*)::int count from public.audit_logs");
+    await db.exec("set role service_role");
+    const repeatRun = await runSeed();
+    await db.exec("reset role");
+    assert.deepEqual(repeatRun.rows[0].value, { departments: 12, positions: 98, employees: 98 });
+    const auditAfterRepeat = await db.query<{ count: number }>("select count(*)::int count from public.audit_logs");
+    assert.equal(auditAfterRepeat.rows[0].count, auditBeforeRepeat.rows[0].count);
+
+    await db.exec("set role service_role");
+    await db.query(
+      "insert into public.attendance_records(employee_id,external_id,attendance_date,classification,source_updated_at) values ($1,'SAMPLE-ATT-DEMO-ORG-002-2026-09-03','2026-09-03','on_time',now())",
+      [employees[1].id],
+    );
+    const normalized = await db.query<{ value: { renumbered: number } }>(
+      "select public.normalize_demo_employee_numbers($1::jsonb) value",
+      [JSON.stringify([{ id: employees[1].id, employeeNumber: "EMP-100002" }])],
+    );
+    await db.exec("reset role");
+    assert.deepEqual(normalized.rows[0].value, { renumbered: 1 });
+    const normalizedProfile = await db.query<{ employee_number: string }>(
+      "select employee_number from public.profiles where id=$1",
+      [employees[1].id],
+    );
+    assert.equal(normalizedProfile.rows[0].employee_number, "EMP-100002");
+    const normalizedAttendanceReference = await db.query<{ external_id: string }>(
+      "select external_id from public.attendance_records where employee_id=$1 and attendance_date='2026-09-03'",
+      [employees[1].id],
+    );
+    assert.equal(normalizedAttendanceReference.rows[0].external_id, "SAMPLE-ATT-EMP-100002-2026-09-03");
+
+    await db.exec("set role service_role");
+    await db.query(
+      "insert into public.attendance_records(employee_id,external_id,attendance_date,classification,source_updated_at) values ($1,'HR2-VERIFIED-SEP','2026-09-01','on_time',now()),($2,'SAMPLE-ATT-OLD-SEED','2026-09-02','on_time',now())",
+      [worker, employees[2].id],
+    );
+    const attendanceSeed = () => db.query<{ value: { employees: number; workingDays: number; generatedEmployeeDays: number; present: number; late: number; absent: number; onLeave: number; overtime: number; untouchedExistingAttendance: number } }>(
+      "select public.seed_demo_attendance_month('2026-09-01') value",
+    );
+    const seededAttendance = await attendanceSeed();
+    const attendanceCounts = seededAttendance.rows[0].value;
+    assert.equal(attendanceCounts.employees, 98);
+    assert.equal(attendanceCounts.workingDays, 22);
+    assert.equal(attendanceCounts.generatedEmployeeDays, 2155);
+    assert.equal(attendanceCounts.present, 1832);
+    assert.equal(attendanceCounts.late, 65);
+    assert.equal(attendanceCounts.overtime, 43);
+    assert.equal(attendanceCounts.absent + attendanceCounts.onLeave, 323);
+    assert.equal(attendanceCounts.untouchedExistingAttendance, 1);
+    const verifiedRow = await db.query<{ external_id: string }>(
+      "select external_id from public.attendance_records where employee_id=$1 and attendance_date='2026-09-01'",
+      [worker],
+    );
+    assert.equal(verifiedRow.rows[0].external_id, "HR2-VERIFIED-SEP");
+    const sampleRow = await db.query<{ external_id: string }>(
+      "select external_id from public.attendance_records where employee_id=$1 and attendance_date='2026-09-02'",
+      [employees[2].id],
+    );
+    assert.match(sampleRow.rows[0].external_id, /^SAMPLE-ATT-ORG-202609-/);
+    const repeatedAttendance = await attendanceSeed();
+    assert.equal(repeatedAttendance.rows[0].value.generatedEmployeeDays, 2155);
+    assert.equal(repeatedAttendance.rows[0].value.untouchedExistingAttendance, 1);
+    await db.exec("reset role");
+  } finally {
+    await db.close();
+  }
+});
+
 test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t) => {
   const db = new PGlite();
   try {
@@ -35,13 +183,13 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       create schema auth;
       create table auth.users(id uuid primary key);
       create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub', true),'')::uuid $$;
-      create function auth.jwt() returns jsonb language sql stable as $$ select jsonb_build_object('sub',nullif(current_setting('request.jwt.claim.sub',true),''),'aal',coalesce(nullif(current_setting('request.jwt.claim.aal',true),''),'aal1'),'session_id',nullif(current_setting('request.jwt.claim.session_id',true),'')) $$;
+      create function auth.jwt() returns jsonb language sql stable as $$ select jsonb_build_object('sub',nullif(current_setting('request.jwt.claim.sub',true),''),'role',nullif(current_setting('request.jwt.claim.role',true),''),'aal',coalesce(nullif(current_setting('request.jwt.claim.aal',true),''),'aal1'),'session_id',nullif(current_setting('request.jwt.claim.session_id',true),'')) $$;
       grant usage on schema public,auth to authenticated,anon,service_role;
       grant execute on function auth.uid() to authenticated,anon;
       alter default privileges in schema public grant all on tables to authenticated,anon;
       alter default privileges in schema public grant usage,select on sequences to authenticated;
     `);
-    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql", "202609150001_automatic_attendance_scoring.sql", "202609190001_configurable_payroll_policy.sql", "202609220001_hr2_finance_workflows.sql", "202609230001_analytics_accuracy.sql", "202609290001_email_otp_mfa.sql", "202609290002_custom_email_otp.sql", "202609290003_remove_email_otp_hourly_limit.sql", "202609290004_today_attendance_snapshot.sql", "202609290005_today_active_employee_roster.sql", "202609290006_include_demo_employees_in_today_roster.sql", "202609290007_allow_nonpayroll_demo_attendance.sql", "202609290008_use_existing_payroll_employee_roster.sql", "202609290009_attendance_department_filters.sql", "202609290010_exclude_system_admins_from_attendance.sql", "202609290011_attendance_history_views.sql", "202609300012_department_cards_snapshot.sql", "202609300013_department_cards_simplify.sql"]) {
+    for (const file of ["202608280001_initial_payroll_benefits.sql", "202608300001_ess_attendance_analytics.sql", "202609050001_record_crud.sql", "202609060001_admin_bootstrap.sql", "202609060002_live_reporting.sql", "202609060003_payroll_engine.sql", "202609060004_account_settings.sql", "202609060005_rbac_management.sql", "202609060006_operational_workflows.sql", "202609060007_multi_factor_authentication.sql", "202609150001_automatic_attendance_scoring.sql", "202609190001_configurable_payroll_policy.sql", "202609220001_hr2_finance_workflows.sql", "202609230001_analytics_accuracy.sql", "202609290001_email_otp_mfa.sql", "202609290002_custom_email_otp.sql", "202609290003_remove_email_otp_hourly_limit.sql", "202609290004_today_attendance_snapshot.sql", "202609290005_today_active_employee_roster.sql", "202609290006_include_demo_employees_in_today_roster.sql", "202609290007_allow_nonpayroll_demo_attendance.sql", "202609290008_use_existing_payroll_employee_roster.sql", "202609290009_attendance_department_filters.sql", "202609290010_exclude_system_admins_from_attendance.sql", "202609290011_attendance_history_views.sql", "202609300012_department_cards_snapshot.sql", "202609300013_department_cards_simplify.sql", "202609300014_organization_position_catalog.sql", "202609300015_demo_employee_numbers_and_september_attendance.sql"]) {
       // PGlite includes gen_random_uuid in core, but not the optional pgcrypto extension.
       const sql = (await readFile(new URL(`../scripts/supabase/migrations/${file}`, import.meta.url), "utf8")).replace("create extension if not exists pgcrypto;", "");
       await db.exec(sql);
