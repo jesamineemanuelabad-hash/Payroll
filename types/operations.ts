@@ -59,5 +59,6 @@ export type ClaimRecord = {
   submittedDate: string;
   documents: number;
   verification: "verified" | "needs_review" | "missing_document";
-  status: "approved_ess" | "verifying" | "ready_for_payroll" | "included" | "rejected";
+  status: "draft" | "pending" | "under_review" | "finance_approval" | "approved" | "approved_ess" | "verifying" | "ready_for_payroll" | "included" | "paid" | "rejected";
 };
+

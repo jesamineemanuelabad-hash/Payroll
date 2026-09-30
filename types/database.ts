@@ -86,6 +86,8 @@ export type Database = {
       attendance_records_for_date: { Args: { p_date: string }; Returns: Json };
       employee_attendance_history: { Args: { p_employee_id: string; p_page?: number; p_size?: number }; Returns: Json };
       department_cards_snapshot: { Args: Record<string, never>; Returns: Json };
+      hmo_benefits_snapshot: { Args: Record<string, never>; Returns: Json };
+      save_hmo_enrollment: { Args: { p_employee_id:string; p_package_id:string; p_status:string; p_membership_number:string|null; p_effective_date:string|null; p_expiration_date:string|null; p_notes:string|null }; Returns: Json };
       issue_login_email_otp: { Args: { p_user_id: string; p_session_id: string; p_code_hash: string }; Returns: string };
       verify_login_email_otp: { Args: { p_user_id: string; p_session_id: string; p_code_hash: string }; Returns: string };
       invalidate_login_email_otp: { Args: { p_user_id: string; p_session_id: string; p_code_hash: string }; Returns: undefined };
