@@ -135,7 +135,35 @@ export async function getPayrollRunReport(runId: string): Promise<{ ok: true; da
     const { data: auth } = await db.auth.getUser();
     if (!auth.user) return { ok: false, message: "Your session expired. Sign in again." };
     const { data, error } = await db.rpc("payroll_run_report", { p_run_id: runId });
-    return error ? { ok: false, message: error.message } : { ok: true, data: data as unknown as PayrollRunReport };
+    if (error) return { ok: false, message: error.message };
+    const report = data as unknown as PayrollRunReport;
+    const { data: claims, error: claimsError } = await db
+      .from("claims")
+      .select("id,employee_id,claim_number,category,expense_date,description,amount")
+      .eq("included_payroll_run_id", runId)
+      .order("expense_date")
+      .order("claim_number");
+    if (claimsError) return { ok: false, message: `Payroll loaded, but included claims could not be loaded: ${claimsError.message}` };
+    const claimsByEmployee = new Map<string, NonNullable<PayrollRunReport["items"][number]["claims"]>>();
+    for (const claim of claims) {
+      const employeeClaims = claimsByEmployee.get(claim.employee_id) ?? [];
+      employeeClaims.push({
+        id: claim.id,
+        claimNumber: claim.claim_number,
+        category: claim.category,
+        expenseDate: claim.expense_date,
+        description: claim.description,
+        amount: Number(claim.amount),
+      });
+      claimsByEmployee.set(claim.employee_id, employeeClaims);
+    }
+    return {
+      ok: true,
+      data: {
+        ...report,
+        items: report.items.map((item) => ({ ...item, claims: claimsByEmployee.get(item.employeeId) ?? [] })),
+      },
+    };
   } catch { return { ok: false, message: "Unable to load the payroll report." }; }
 }
 

@@ -23,6 +23,12 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["job_positions"]["Insert"]>;
         Relationships: [];
       };
+      claims: {
+        Row: { id:string; employee_id:string; claim_number:string; category:string; expense_date:string; description:string; amount:number; included_payroll_run_id:string|null };
+        Insert: Partial<Database["public"]["Tables"]["claims"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["claims"]["Row"]>;
+        Relationships: [];
+      };
       payroll_runs: {
         Row: {
           id: string;

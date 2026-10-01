@@ -65,11 +65,21 @@ export type PayrollEmployee = {
   status: "ready" | "needs_review";
 };
 
+export type PayrollClaimLine = {
+  id: string;
+  claimNumber: string;
+  category: string;
+  expenseDate: string;
+  description: string;
+  amount: number;
+};
+
 export type PayrollReportItem = {
   id: string; employeeId: string; employeeNumber: string; employeeName: string; department: string;
   salaryFrequency: string; dailyRate: number; hourlyRate: number; workedDays: number; paidLeaveDays: number;
   lateMinutes: number; undertimeMinutes: number; absenceMinutes: number; overtimeMinutes: number;
   basicSalary: number; allowances: number; overtimePay: number; bonus: number; benefits: number; reimbursements: number; grossPay: number;
+  claims?: PayrollClaimLine[];
   ordinaryOvertimeMinutes: number; restDayOvertimeMinutes: number; specialDayOvertimeMinutes: number; regularHolidayOvertimeMinutes: number; doubleHolidayOvertimeMinutes: number;
   nightMinutes: number; nightDifferential: number;
   lateDeduction: number; undertimeDeduction: number; absenceDeduction: number; sssEmployee: number; philhealthEmployee: number; pagibigEmployee: number;

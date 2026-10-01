@@ -44,6 +44,8 @@ function PayslipDialog({ item, report, onClose }: { item: PayrollReportItem | nu
                 [`Night differential (${item.nightMinutes} min)`, item.nightDifferential], ["Bonus", item.bonus], ["Benefits", item.benefits],
                 ["Reimbursements", item.reimbursements],
               ].map(([label, amount]) => <div key={String(label)} className="flex justify-between gap-3 border-b border-slate-100 py-2.5 last:border-0"><dt className="text-slate-600">{label}</dt><dd className="whitespace-nowrap font-medium tabular-nums text-slate-900">{currency(Number(amount))}</dd></div>)}
+              {item.paidLeaveDays > 0 && <div className="flex justify-between gap-3 border-b border-slate-100 py-2.5"><dt className="text-slate-600">Paid leave · {item.paidLeaveDays} day{item.paidLeaveDays === 1 ? "" : "s"}</dt><dd className="whitespace-nowrap text-right text-xs font-medium text-emerald-700">Included in basic pay</dd></div>}
+              {item.claims?.map((claim) => <div key={claim.id} className="flex justify-between gap-3 border-b border-slate-100 py-2.5 last:border-0"><dt className="min-w-0 text-slate-600"><span className="block font-medium text-slate-700">{claim.claimNumber} · {pretty(claim.category)}</span><span className="block truncate text-xs">{claim.description} · {claim.expenseDate}</span></dt><dd className="whitespace-nowrap font-medium tabular-nums text-slate-900">{currency(claim.amount)}</dd></div>)}
               <div className="flex justify-between border-t border-emerald-200 py-3 font-semibold text-slate-950"><dt>Gross pay</dt><dd>{currency(item.grossPay)}</dd></div>
             </dl>
           </section>
@@ -114,13 +116,14 @@ export function PayrollRunWorkspace({ report, roles }: { report: PayrollRunRepor
         <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center sm:justify-between"><div><h2 className="text-sm font-semibold text-slate-900">Employee payroll entries</h2><p className="mt-1 text-xs text-slate-500">Click an employee to view the itemized earnings, deductions, and net-pay calculation.</p></div><div className="relative w-full sm:max-w-xs"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><Input value={search} onChange={(event) => setSearch(event.target.value)} aria-label="Search payroll employees" placeholder="Search employee or department" className="pl-9" /></div></div>
         <div className="overflow-x-auto"><table className="w-full min-w-[1320px] text-left text-sm">
           <thead className="bg-slate-50 text-xs text-slate-500"><tr>
-            {["Employee", "Department", "Days", "Gross pay", "SSS (EE)", "PhilHealth", "Pag-IBIG", "Tax", "Total deductions", "Net pay", "Status"].map((heading, index) => <th key={heading} className={`px-3 py-3 font-medium ${index >= 2 && index <= 9 ? "text-right" : ""} ${index === 8 ? "text-rose-600" : index === 9 ? "text-emerald-700" : ""}`}>{heading}</th>)}
+            {["Employee", "Department", "Days", "Gross pay", "Reimbursements", "SSS (EE)", "PhilHealth", "Pag-IBIG", "Tax", "Total deductions", "Net pay", "Status"].map((heading, index) => <th key={heading} className={`px-3 py-3 font-medium ${index >= 2 && index <= 10 ? "text-right" : ""} ${index === 9 ? "text-rose-600" : index === 10 ? "text-emerald-700" : ""}`}>{heading}</th>)}
           </tr></thead>
           <tbody>{filteredItems.map((item) => <tr key={item.id} className="border-t hover:bg-slate-50/70">
             <td className="px-3 py-3"><button type="button" aria-label={`View payslip for ${item.employeeName}`} className="flex items-center gap-2.5 text-left" onClick={() => setSelected(item)}><span className="grid size-8 shrink-0 place-items-center rounded-full bg-indigo-50 text-[10px] font-semibold text-indigo-700">{item.employeeName.split(/\s+/).map((part) => part[0]).slice(0, 2).join("").toUpperCase()}</span><span><span className="block font-medium text-slate-900 hover:text-indigo-700">{item.employeeName}</span><span className="mt-0.5 block text-xs text-slate-500">{item.employeeNumber}</span></span></button></td>
             <td className="px-3 py-3 text-slate-600">{item.department}</td>
             <td className="px-3 py-3 text-right tabular-nums text-slate-600">{item.workedDays + item.paidLeaveDays}</td>
             <td className="px-3 py-3 text-right font-medium tabular-nums">{currency(item.grossPay)}</td>
+            <td className="px-3 py-3 text-right tabular-nums">{currency(item.reimbursements)}</td>
             <td className="px-3 py-3 text-right tabular-nums text-rose-600">−{currency(item.sssEmployee)}</td>
             <td className="px-3 py-3 text-right tabular-nums text-rose-600">−{currency(item.philhealthEmployee)}</td>
             <td className="px-3 py-3 text-right tabular-nums text-rose-600">−{currency(item.pagibigEmployee)}</td>
@@ -129,7 +132,7 @@ export function PayrollRunWorkspace({ report, roles }: { report: PayrollRunRepor
             <td className="px-3 py-3 text-right font-semibold tabular-nums text-emerald-700">{currency(item.netPay)}</td>
             <td className="px-3 py-3"><span className={item.status === "needs_review" ? "text-amber-700" : "text-emerald-700"}>{pretty(item.status)}</span></td>
           </tr>)}
-          {!filteredItems.length && <tr><td colSpan={11} className="px-4 py-12 text-center text-sm text-slate-500">{items.length ? "No employee entries match the search." : "No employee payroll entries are saved on this run."}</td></tr>}
+          {!filteredItems.length && <tr><td colSpan={12} className="px-4 py-12 text-center text-sm text-slate-500">{items.length ? "No employee entries match the search." : "No employee payroll entries are saved on this run."}</td></tr>}
           </tbody>
         </table></div>
       </>}

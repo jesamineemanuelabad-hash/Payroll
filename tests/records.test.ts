@@ -95,6 +95,10 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
     await db.exec(hrAnalyticsPasswordGateMigration);
     const missingAttendanceAbsenceMigration = await readFile(new URL("../scripts/supabase/migrations/202610010012_missing_attendance_as_weekday_absence.sql", import.meta.url), "utf8");
     await db.exec(missingAttendanceAbsenceMigration);
+    const financeApprovedClaimsMigration = await readFile(new URL("../scripts/supabase/migrations/202610010013_finance_approved_claims_in_payroll.sql", import.meta.url), "utf8");
+    await db.exec(financeApprovedClaimsMigration);
+    const invalidatePayrollAfterLeaveChangeMigration = await readFile(new URL("../scripts/supabase/migrations/202610010014_invalidate_payroll_after_leave_change.sql", import.meta.url), "utf8");
+    await db.exec(invalidatePayrollAfterLeaveChangeMigration);
     await db.exec("grant all privileges on all tables in schema public to service_role");
     for (const id of [admin, reviewer, worker, outsider, systemAdmin]) {
       await db.query("insert into auth.users(id) values ($1)", [id]);
@@ -566,11 +570,12 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       await db.query("select set_config('request.jwt.claim.sub','',false)");
       await db.exec("set role service_role");
       const financeDecision = await db.query<{ value: Row }>(
-        "update public.claims set status='approved',amount=approved_amount,approved_at=now(),finance_approver_id=$2,finance_approved_at=now(),approver_id=$2,reviewer_id=$2,reviewed_at=now() where id=$1 returning to_jsonb(public.claims.*) value",
+        "update public.claims set status='approved',approved_at=now(),finance_approver_id=$2,finance_approved_at=now(),approver_id=$2,reviewer_id=$2,reviewed_at=now() where id=$1 returning to_jsonb(public.claims.*) value",
         [finance.id, admin],
       );
       const externallyApproved = financeDecision.rows[0].value;
-      assert.equal(externallyApproved.approver_id, admin); assert.equal(externallyApproved.amount,2000); assert.equal(externallyApproved.requested_amount,2500);
+      created.approved_claim = externallyApproved;
+      assert.equal(externallyApproved.approver_id, admin); assert.equal(externallyApproved.amount,2000); assert.equal(externallyApproved.approved_amount,2000); assert.equal(externallyApproved.requested_amount,2500);
       await db.exec("reset role");
       await as(admin);
       await assert.rejects(update("claims", externallyApproved, { status: "paid" }), /Finance approval and disbursement are handled outside this system/i);
@@ -667,6 +672,23 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       assert.deepEqual(philhealth.rows[0].value, { premium: 1600, employee: 800, employer: 800 });
       assert.equal(Number((await db.query<{ value: number }>("select public.bir_withholding_tax(15000,'first_cutoff') value")).rows[0].value), 687.45);
 
+      const secondCutoffRun = await create("payroll_runs", { period_start: "2026-09-16", period_end: "2026-09-30", pay_date: "2026-09-30" });
+      await db.query("select public.calculate_payroll_run_complete($1)", [secondCutoffRun.id]);
+      const secondCutoffReport = await db.query<{ value: { items: Array<Record<string, unknown>> } }>(
+        "select public.payroll_run_report($1) value",
+        [secondCutoffRun.id],
+      );
+      assert.equal(secondCutoffReport.rows[0].value.items[0].reimbursements, 0);
+      assert.equal((await db.query<{ included_payroll_run_id: string }>(
+        "select included_payroll_run_id from public.claims where id=$1",
+        [created.approved_claim.id],
+      )).rows[0].included_payroll_run_id, created.payroll_runs.id);
+      await db.exec("reset role; set role service_role");
+      await db.query("delete from public.payroll_items where payroll_run_id=$1", [secondCutoffRun.id]);
+      await db.query("delete from public.payroll_runs where id=$1", [secondCutoffRun.id]);
+      await db.exec("reset role");
+      await as(admin);
+
       const calculation = await db.query<{ value: { employees: number; ruleVersion: string } }>("select public.calculate_payroll_run_complete($1) value", [created.payroll_runs.id]);
       assert.equal(calculation.rows[0].value.employees, 1);
       assert.equal(calculation.rows[0].value.ruleVersion, "PH-2025-BIR-2023-v2");
@@ -688,14 +710,75 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       assert.equal(item.pagibigEmployee, 100);
       assert.ok(Number(item.withholdingTax) > 0);
       assert.ok(Number(item.taxableCompensation) > 0);
+      const expectedTaxableCompensation = Math.max(0, Number(item.basicSalary) - Number(item.absenceDeduction) - Number(item.lateDeduction) - Number(item.undertimeDeduction) + Number(item.overtimePay) + Number(item.nightDifferential) - Number(item.sssEmployee) - Number(item.philhealthEmployee) - Number(item.pagibigEmployee));
+      assert.equal(Number(item.taxableCompensation), Number(expectedTaxableCompensation.toFixed(2)));
+      const expectedWithholdingTax = await db.query<{ value: number }>(
+        "select public.bir_withholding_tax($1,'first_cutoff') value",
+        [expectedTaxableCompensation],
+      );
+      assert.equal(Number(item.withholdingTax), Number(expectedWithholdingTax.rows[0].value));
       assert.ok(Number(item.netPay) < Number(item.grossPay));
       assert.equal(item.benefitEmployer, 600);
+      assert.equal(item.reimbursements, 2000);
+      assert.deepEqual(item.claims, [{
+        id: created.approved_claim.id,
+        claimNumber: "CLM-APPROVAL",
+        category: "transportation",
+        expenseDate: "2026-09-03",
+        description: "Company travel",
+        amount: 2000,
+      }]);
       const calculationSnapshot = item.calculation as Record<string, unknown>;
       assert.equal(calculationSnapshot.hmoEmployerCost, 500);
       assert.equal(calculationSnapshot.hmoPricingBasis, "planning_estimate");
       await db.query("select public.calculate_payroll_run_complete($1)", [created.payroll_runs.id]);
       const afterRecalculation = await db.query<{ value: { items: Array<Record<string, unknown>> } }>("select public.payroll_run_report($1) value", [created.payroll_runs.id]);
       assert.equal(afterRecalculation.rows[0].value.items[0].benefitEmployer, 600);
+      assert.equal(afterRecalculation.rows[0].value.items[0].reimbursements, 2000);
+      assert.equal((afterRecalculation.rows[0].value.items[0].claims as Array<{ claimNumber: string }>)[0].claimNumber, "CLM-APPROVAL");
+
+      const postCalculationRun = await create("payroll_runs", { period_start: "2026-10-16", period_end: "2026-10-31", pay_date: "2026-11-05" });
+      const postCalculationAbsence = await create("attendance_records", { employee_id: worker, external_id: "APPROVED-LEAVE-INVALIDATION", attendance_date: "2026-10-19", classification: "absent", absence_minutes: 480 });
+      await db.query("select public.calculate_payroll_run_complete($1)", [postCalculationRun.id]);
+      const leaveCreatedAfterCalculation = await create("leave_requests", {
+        employee_id: worker,
+        leave_type: "vacation",
+        start_date: "2026-10-19",
+        end_date: "2026-10-19",
+        total_days: 1,
+        is_paid: true,
+        reason: "Paid leave approved after payroll calculation",
+        status: "draft",
+        rejection_reason: null,
+      });
+      const leaveSubmittedAfterCalculation = await update("leave_requests", leaveCreatedAfterCalculation, { status: "submitted" });
+      const leaveApprovedAfterCalculation = await update("leave_requests", leaveSubmittedAfterCalculation, { status: "approved" });
+      assert.equal(leaveApprovedAfterCalculation.approved_by, admin);
+      const invalidatedRun = await db.query<{ calculated_at: string | null; validation_status: string }>(
+        "select calculated_at,validation_status from public.payroll_runs where id=$1",
+        [postCalculationRun.id],
+      );
+      assert.equal(invalidatedRun.rows[0].calculated_at, null);
+      assert.equal(invalidatedRun.rows[0].validation_status, "not_run");
+      const recalculation = await db.query<{ value: { validation: { passed: boolean } } }>(
+        "select public.calculate_payroll_run_complete($1) value",
+        [postCalculationRun.id],
+      );
+      assert.equal(recalculation.rows[0].value.validation.passed, true);
+      const postApprovalReport = await db.query<{ value: { items: Array<Record<string, unknown>> } }>(
+        "select public.payroll_run_report($1) value",
+        [postCalculationRun.id],
+      );
+      assert.equal(postApprovalReport.rows[0].value.items[0].absenceMinutes, 0);
+      assert.equal(postApprovalReport.rows[0].value.items[0].paidLeaveDays, 1);
+      await db.exec("reset role");
+      await db.query("delete from public.payroll_items where payroll_run_id=$1", [postCalculationRun.id]);
+      await db.query("delete from public.payroll_runs where id=$1", [postCalculationRun.id]);
+      await db.exec("alter table public.leave_requests disable trigger guard_leave_request");
+      await db.query("delete from public.leave_requests where id=$1", [leaveApprovedAfterCalculation.id]);
+      await db.exec("alter table public.leave_requests enable trigger guard_leave_request");
+      await db.query("delete from public.attendance_records where id=$1", [postCalculationAbsence.id]);
+      await as(admin);
       assert.equal((afterRecalculation.rows[0].value.items[0].calculation as Record<string, unknown>).hmoEmployerCost, 500);
       created.payroll_items = (await read("payroll_items", created.payroll_items.id)).rows[0];
     });
@@ -787,7 +870,8 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
     });
     await t.test("finalized payroll is immutable, including through the item editor", async () => {
       await db.exec("reset role");
-      await db.query("update public.payroll_runs set status = 'paid' where id = $1", [created.payroll_runs.id]);
+      const currentPayrollRun = (await read("payroll_runs", created.payroll_runs.id)).rows[0];
+      await db.query("update public.payroll_runs set status = 'paid' where id = $1", [currentPayrollRun.id]);
       await as(admin);
       await assert.rejects(update("payroll_items", created.payroll_items, { basic_salary: 1 }), /draft/);
       await assert.rejects(remove("payroll_items", created.payroll_items), /draft/);

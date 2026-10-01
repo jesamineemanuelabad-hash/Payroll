@@ -51,7 +51,10 @@ Apply these files in order in the Supabase SQL editor (or your migration pipelin
 43. `scripts/supabase/migrations/202610010009_finance_handoff_and_hmo_package_providers.sql`
 44. `scripts/supabase/migrations/202610010010_hr_workforce_analytics.sql`
 45. `scripts/supabase/migrations/202610010011_hr_analytics_password_gate.sql`
-46. `scripts/supabase/seed.sql` (optional department/provider/plan catalog)
+46. `scripts/supabase/migrations/202610010012_missing_attendance_as_weekday_absence.sql`
+47. `scripts/supabase/migrations/202610010013_finance_approved_claims_in_payroll.sql`
+48. `scripts/supabase/migrations/202610010014_invalidate_payroll_after_leave_change.sql`
+49. `scripts/supabase/seed.sql` (optional department/provider/plan catalog)
 
 Apply only migrations that have not already run. Do not rerun existing migrations. Back up any existing live data before changing its schema. The CRUD migration restricts authenticated direct table writes; application writes use validated RPCs. The operational workflow migration immediately denies terminated profiles at the database layer and adds payroll handoff transitions plus automatic compensation application after Finance records implementation.
 
@@ -76,6 +79,12 @@ Migration `202610010006_payroll_calculation_views.sql` adds taxable compensation
 Migration `202610010007_expand_leave_types.sql` allows the leave categories shown in Employee Management’s Leave types tab. The application uses a default company policy of 10 calendar-year days in a shared vacation/annual/service-incentive bank and 10 sick days, with no carry-over; employee balances are calculated from approved paid requests. Other approved leave is tracked separately by leave type. Approved paid requests are read by the payroll calculator for overlapping draft runs.
 
 Migration `202610010008_claim_receipts_and_hmo_payroll.sql` provisions private claim-receipt storage when Supabase Storage is available and adds active HMO enrollment costs to employer contributions on draft payroll recalculation. HMO premiums are prorated by payroll schedule, do not reduce employee net pay, and retain their pricing basis in the payslip; planning estimates are explicitly labeled.
+
+Migration `202610010013_finance_approved_claims_in_payroll.sql` uses each Finance-approved claim's approved amount for payroll reimbursement calculations and adds the itemized claim reference, category, date, description, and amount to the payroll report. Approved claims appear in the first eligible payroll run after Finance approval and are shown on the employee payslip; unapproved and already-paid claims are not included.
+
+The same migration applies the payroll tax basis: basic pay less absence, late, and undertime deductions, plus overtime and night differential, less employee SSS, PhilHealth, and Pag-IBIG contributions. Reimbursements are not included in this taxable-compensation calculation.
+
+Migration `202610010014_invalidate_payroll_after_leave_change.sql` invalidates overlapping draft payroll calculations whenever an employee's leave request changes. This prevents payroll from being handed off with stale paid-leave or absence figures; recalculate the draft run to apply the latest approved leave. The payroll calculator applies this to every employee and counts approved paid leave only once in the overlapping period.
 
 To populate an explicitly labeled workflow simulation using existing active employees with current salary records, run `npm run seed:compensation-proposals` for a dry run, then `npm run seed:compensation-proposals -- --apply` to write six pending, six rejected, and six approved-but-unimplemented proposals. Simulation reviewer personas are labeled `[Simulation]` on the proposal; they are not auth users and receive no account or role. Only the existing active Super Admin who creates the cycle is recorded as its actual creator. These simulation proposals are not real compensation decisions and must not be implemented. Approved proposals do not affect salary history or payroll until a separate implementation action.
 
