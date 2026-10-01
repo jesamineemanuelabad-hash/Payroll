@@ -76,7 +76,7 @@ export type PayrollReportItem = {
   withholdingTax: number; benefitDeduction: number; otherDeductions: number; totalDeductions: number;
   sssEmployer: number; philhealthEmployer: number; pagibigEmployer: number; benefitEmployer: number; employerContributions: number; netPay: number; status: string;
   taxableCompensation?: number;
-  calculation?: { monthlyBasic?: number; statutoryContributionFactor?: number; contributionAllocation?: string; ruleVersion?: string; schedule?: string; nightDifferentialRate?: number } | null;
+  calculation?: { monthlyBasic?: number; statutoryContributionFactor?: number; contributionAllocation?: string; ruleVersion?: string; schedule?: string; nightDifferentialRate?: number; hmoEmployerCost?: number; hmoPricingBasis?: "planning_estimate" | "provider_quote" | null; hmoPackage?: string | null } | null;
 };
 
 export type PayrollRunReport = {

@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { createSupabaseServerClient, hasSupabaseEnvironment } from "@/lib/supabase/server";
+import { createSupabaseAdminClient, hasSupabaseAdminEnvironment } from "@/lib/supabase/admin";
 import { entities, recordLabel, type RecordRow } from "@/lib/records/config";
 import { recordSchema } from "@/lib/records/validation";
 import type { Json } from "@/types/database";
@@ -370,6 +371,62 @@ export async function deleteRecord(input: unknown): Promise<Result<RecordRow>> {
   const parsed = z.object({ entity: z.string().refine((key) => Object.hasOwn(entities, key)), id: z.string().uuid(), version: z.string().datetime({ offset: true }) }).strict().safeParse(input);
   if (!parsed.success) return { ok: false, message: "Invalid delete request." };
   return mutate(parsed.data.entity, "delete", {}, parsed.data.id, parsed.data.version);
+}
+
+export async function uploadClaimReceipt(input: FormData): Promise<Result<{ url: string }>> {
+  const employeeId = z.string().uuid().safeParse(input.get("employeeId"));
+  const file = input.get("file");
+  if (!employeeId.success || !(file instanceof File)) return { ok: false, message: "Select an employee and a supporting document." };
+  if (!["application/pdf", "image/jpeg", "image/png"].includes(file.type) || file.size < 1 || file.size > 5 * 1024 * 1024) {
+    return { ok: false, message: "Upload a PDF, JPEG, or PNG no larger than 5 MB." };
+  }
+  if (!hasSupabaseEnvironment() || !hasSupabaseAdminEnvironment()) return { ok: false, message: "Configure Supabase administrator storage access before uploading a claim receipt." };
+
+  try {
+    const db = await createSupabaseServerClient();
+    const { data: auth } = await db.auth.getUser();
+    if (!auth.user) return { ok: false, message: "Your session expired. Sign in again." };
+    const { data: roles, error: roleError } = await db.rpc("record_roles", {});
+    if (roleError) return { ok: false, message: databaseMessage(roleError) };
+    if (!roles?.some((role) => entities.claims.roles.includes(role))) return { ok: false, message: "Your role cannot upload claim receipts." };
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const isPdf = file.type === "application/pdf" && new TextDecoder().decode(bytes.slice(0, 5)) === "%PDF-";
+    const isJpeg = file.type === "image/jpeg" && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+    const isPng = file.type === "image/png" && bytes.slice(0, 8).join(",") === "137,80,78,71,13,10,26,10";
+    if (!isPdf && !isJpeg && !isPng) return { ok: false, message: "The file contents do not match the selected PDF or image type." };
+
+    const storage = createSupabaseAdminClient().storage;
+    const { error: bucketError } = await storage.getBucket("claim-receipts");
+    if (bucketError) {
+      const { error: createBucketError } = await storage.createBucket("claim-receipts", {
+        public: false,
+        fileSizeLimit: 5 * 1024 * 1024,
+        allowedMimeTypes: ["application/pdf", "image/jpeg", "image/png"],
+      });
+      if (createBucketError) {
+        const { error: retryBucketError } = await storage.getBucket("claim-receipts");
+        if (retryBucketError) return { ok: false, message: `Private receipt storage is unavailable: ${createBucketError.message}` };
+      }
+    }
+    const extension = isPdf ? "pdf" : isJpeg ? "jpg" : "png";
+    const path = `${employeeId.data}/${crypto.randomUUID()}.${extension}`;
+    const bucket = storage.from("claim-receipts");
+    const { error: uploadError } = await bucket.upload(path, bytes, {
+      contentType: file.type,
+      upsert: false,
+    });
+    if (uploadError) return { ok: false, message: uploadError.message };
+
+    const { data: signed, error: signingError } = await bucket.createSignedUrl(path, 31536000);
+    if (signingError || !signed?.signedUrl) {
+      const { error: cleanupError } = await bucket.remove([path]);
+      return { ok: false, message: cleanupError ? "Receipt was uploaded but its private link could not be created or cleaned up. Contact an administrator." : "A private receipt link could not be created. Try again." };
+    }
+    return { ok: true, data: { url: new URL(signed.signedUrl, process.env.NEXT_PUBLIC_SUPABASE_URL).toString() } };
+  } catch {
+    return { ok: false, message: "Unable to upload the receipt. Check your connection and try again." };
+  }
 }
 
 async function mutate(entity: string, operation: string, data: Json, id?: string, version?: string): Promise<Result<RecordRow>> {

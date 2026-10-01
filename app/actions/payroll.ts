@@ -81,9 +81,9 @@ export async function getPayrollThirteenthMonthSnapshot(year: number): Promise<{
   }
 }
 
-const transitionTargets = z.enum(["draft", "pending_approval", "approved", "paid"]);
+const transitionTargets = z.enum(["draft", "pending_approval"]);
 
-export async function transitionPayrollRun(runId: string, target: PayrollStatus): Promise<{ ok: true; status: PayrollStatus } | { ok: false; message: string }> {
+export async function transitionPayrollRun(runId: string, target: "draft" | "pending_approval"): Promise<{ ok: true; status: PayrollStatus } | { ok: false; message: string }> {
   const parsed = z.object({ runId: z.string().uuid(), target: transitionTargets }).safeParse({ runId, target });
   if (!parsed.success) return { ok: false, message: "Invalid payroll transition." };
   if (!hasSupabaseEnvironment()) return { ok: false, message: "Connect Supabase and apply the operational workflow migration first." };

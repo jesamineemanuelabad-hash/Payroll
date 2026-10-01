@@ -5,9 +5,9 @@ import type { PayrollStatus } from "@/types/payroll";
 const statusConfig: Record<PayrollStatus, { label: string; className: string; icon: typeof Check }> = {
   draft: { label: "Draft", className: "bg-slate-100 text-slate-600", icon: CircleDashed },
   processing: { label: "Processing", className: "bg-blue-50 text-blue-700", icon: LoaderCircle },
-  pending_approval: { label: "Pending approval", className: "bg-amber-50 text-amber-700", icon: Clock3 },
-  approved: { label: "Approved", className: "bg-indigo-50 text-indigo-700", icon: Check },
-  paid: { label: "Paid", className: "bg-emerald-50 text-emerald-700", icon: Check },
+  pending_approval: { label: "Waiting for Finance", className: "bg-amber-50 text-amber-700", icon: Clock3 },
+  approved: { label: "Pending disbursement", className: "bg-indigo-50 text-indigo-700", icon: Check },
+  paid: { label: "Payment recorded", className: "bg-emerald-50 text-emerald-700", icon: Check },
   failed: { label: "Failed", className: "bg-red-50 text-red-700", icon: AlertCircle },
 };
 

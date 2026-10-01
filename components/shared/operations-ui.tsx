@@ -1,13 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Download, FileSpreadsheet, LoaderCircle, RefreshCw, Search } from "lucide-react";
+import { LoaderCircle, RefreshCw, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { downloadRecordsAsCsv, exportRecordsToExcel, type ExportColumn } from "@/lib/export-records";
-import type { ExportRecord } from "@/types/operations";
 import { synchronizeEssRecords } from "@/app/actions/integrations";
 
 export function CompactMetric({ label, value, helper, icon: Icon, tone = "default" }: { label: string; value: string; helper: string; icon: typeof RefreshCw; tone?: "default" | "success" | "warning" | "danger" }) {
@@ -15,19 +13,7 @@ export function CompactMetric({ label, value, helper, icon: Icon, tone = "defaul
   return <div className="border-r border-slate-200 p-4 last:border-r-0 sm:p-5"><div className="flex items-center justify-between gap-3"><p className="text-xs font-medium text-slate-500">{label}</p><span className={cn("grid size-8 place-items-center rounded-lg", tones[tone])}><Icon className="size-4" /></span></div><p className="mt-2 text-xl font-semibold tracking-[-0.025em] text-slate-950">{value}</p><p className="mt-1.5 truncate text-xs text-slate-500">{helper}</p></div>;
 }
 
-export function RecordToolbar({ search, onSearch, placeholder, columns, records, fileName, sheetName, children, showExport = true }: { search: string; onSearch: (value: string) => void; placeholder: string; columns: ExportColumn[]; records: ExportRecord[]; fileName: string; sheetName: string; children?: React.ReactNode; showExport?: boolean }) {
-  const [exporting, setExporting] = useState(false);
-  async function exportExcel() {
-    setExporting(true);
-    try {
-      await exportRecordsToExcel(fileName, sheetName, columns, records);
-      toast.success("Excel file exported", { description: `${records.length} records were included.` });
-    } catch {
-      toast.error("Excel export failed", { description: "Try again or download the CSV version." });
-    } finally {
-      setExporting(false);
-    }
-  }
+export function RecordToolbar({ search, onSearch, placeholder, children }: { search: string; onSearch: (value: string) => void; placeholder: string; children?: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-3 border-b border-slate-200 p-4 lg:flex-row lg:items-center">
       <div className="relative min-w-0 flex-1 lg:max-w-[320px]">
@@ -36,12 +22,6 @@ export function RecordToolbar({ search, onSearch, placeholder, columns, records,
       </div>
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
         {children}
-        {showExport ? (
-          <div className="ml-auto flex items-center gap-2">
-            <Button variant="secondary" onClick={() => { downloadRecordsAsCsv(fileName, columns, records); toast.success("Records downloaded", { description: `${records.length} records were saved as CSV.` }); }}><Download />Download</Button>
-            <Button variant="secondary" onClick={exportExcel} disabled={exporting}>{exporting ? <LoaderCircle className="animate-spin" /> : <FileSpreadsheet />}{exporting ? "Exporting…" : "Export Excel"}</Button>
-          </div>
-        ) : null}
       </div>
     </div>
   );

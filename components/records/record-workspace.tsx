@@ -2,19 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Download, FileSpreadsheet, Pencil, Plus, RefreshCw, Search, Trash2, Eye, History } from "lucide-react";
+import { Pencil, Plus, RefreshCw, Search, Trash2, Eye, History } from "lucide-react";
 import { toast } from "sonner";
 import { deleteRecord, readRecords, readRecordHistory, resolveRecordLabels, saveRecord, type AuditEntry } from "@/app/actions/records";
 import { entities, recordLabel, type Field, type RecordRow } from "@/lib/records/config";
-import { downloadRecordsAsCsv, exportRecordsToExcel } from "@/lib/export-records";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { SpreadsheetImportButton } from "@/components/records/spreadsheet-import-button";
 import { TodayAttendanceSummary } from "@/components/records/today-attendance-summary";
 import { AttendanceHistoryCalendar } from "@/components/records/attendance-history-calendar";
 import { DepartmentCards } from "@/components/records/department-cards";
+import { LeaveManagement } from "@/components/attendance/leave-management";
 
 type Props = { entityKeys: readonly string[]; roles: string[]; configured: boolean; setupError?: string; parent?: string; hideDataControls?: boolean };
 type Values = Record<string, string | number | boolean | null>;
@@ -105,7 +104,6 @@ function RecordGrid({ entity, roles, configured, setupError, parent, hideDataCon
   const isEmployeeProfile = entity === "profiles";
   const canWrite = !isEmployeeProfile && configured && roles.some((role) => config.roles.includes(role));
   const canCreate = canWrite && config.allowCreate !== false;
-  const canImport = !isEmployeeProfile && configured && config.allowImport === true && roles.some((role) => (config.importRoles ?? config.roles).includes(role));
   const columns = isEmployeeProfile ? ["employee_number", "first_name", "last_name"] : config.columns;
   const [rows, setRows] = useState<RecordRow[]>([]);
   const [count, setCount] = useState(0);
@@ -119,7 +117,6 @@ function RecordGrid({ entity, roles, configured, setupError, parent, hideDataCon
   const [deleting, setDeleting] = useState<RecordRow | null>(null);
   const [deleteError, setDeleteError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [exporting, setExporting] = useState(false);
   const [history, setHistory] = useState<{ row: RecordRow; events: AuditEntry[] } | null>(null);
   const [labels, setLabels] = useState<Record<string, string>>({});
   const generation = useRef(0);
@@ -204,35 +201,13 @@ function RecordGrid({ entity, roles, configured, setupError, parent, hideDataCon
       setHistory({ row, events: result.data });
     } catch { toast.error("Unable to load history."); }
   }
-  async function exportAll(excel: boolean) {
-    setExporting(true);
-    try {
-      const all: RecordRow[] = [];
-      let total = 1;
-      for (let exportPage = 0; all.length < total; exportPage++) {
-        const result = await readRecords({ entity, search: query, size: 1000, page: exportPage, parent });
-        if (!result.ok) throw new Error(result.message);
-        total = result.data.count;
-        all.push(...result.data.rows);
-        if (!result.data.rows.length) break;
-      }
-      const columns = [...new Set(["id", ...config.fields.map((field) => field.key), ...config.columns])].map((key) => ({ key, label: config.fields.find((field) => field.key === key)?.label ?? pretty(key), width: 24 }));
-      const records = all.map((row) => Object.fromEntries(columns.map(({ key }) => [key, row[key] ?? ""])));
-      const filename = `${entity}-${new Date().toISOString().slice(0, 10)}`;
-      if (excel) await exportRecordsToExcel(filename, config.title, columns, records); else downloadRecordsAsCsv(filename, columns, records);
-      toast.success(`${records.length} records exported`);
-    } catch (cause) { toast.error(cause instanceof Error ? cause.message : "Export failed."); }
-    finally { setExporting(false); }
-  }
-
-  return <section className="mt-5 space-y-5"><div className="flex flex-col justify-between gap-4 sm:flex-row"><div><h2 className="text-xl font-semibold text-slate-950">{config.title}</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{config.description}</p></div><div className="flex shrink-0 flex-wrap gap-2">{canImport && <SpreadsheetImportButton entity={entity} disabled={loading} onImported={() => { setPage(0); setQuery(""); setSearch(""); void refresh(); }} />}{canCreate && <Button onClick={() => setEditor({ row: null })}><Plus />Create {config.singular}</Button>}</div></div>
+  return <section className="mt-5 space-y-5"><div className="flex flex-col justify-between gap-4 sm:flex-row"><div><h2 className="text-xl font-semibold text-slate-950">{config.title}</h2><p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">{config.description}</p></div><div className="flex shrink-0 flex-wrap gap-2">{canCreate && <Button onClick={() => setEditor({ row: null })}><Plus />Create {config.singular}</Button>}</div></div>
     {entity === "attendance_records" && <div className="space-y-4"><TodayAttendanceSummary configured={configured} /><AttendanceHistoryCalendar configured={configured} /></div>}
     {config.createNotice && <p className="rounded-xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-900">{config.createNotice}</p>}
-    {canImport && config.importNotice && <p className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700"><span className="font-medium">Spreadsheet format: </span>{config.importNotice}</p>}
     {!configured && <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">Database not connected. Set the Supabase environment variables, apply all migrations, and sign in to create and manage records. Saves are disabled until setup is complete.</p>}
-    {configured && !canWrite && entity !== "attendance_records" && <p className="rounded-xl border bg-slate-50 p-4 text-sm text-slate-600">Read-only access. Your account can view records permitted by its database role.</p>}
+    {configured && !canWrite && entity !== "attendance_records" && entity !== "profiles" && <p className="rounded-xl border bg-slate-50 p-4 text-sm text-slate-600">Read-only access. Your account can view records permitted by its database role.</p>}
     {entity === "departments" && <DepartmentCards configured={configured} canWrite={canWrite} onEdit={(row) => setEditor({ row })} onView={setDetail} />}
-    {entity !== "attendance_records" && entity !== "departments" && <div className="overflow-hidden rounded-xl border bg-white"><div className="flex flex-wrap items-center gap-2 border-b p-4"><form onSubmit={(event) => { event.preventDefault(); setPage(0); setQuery(search.trim()); }} className="flex min-w-0 flex-1 gap-2"><Input aria-label="Search records" maxLength={200} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search records…" className="max-w-xs" /><Button type="submit" variant="secondary" disabled={!configured}><Search /><span className="sr-only sm:not-sr-only">Search</span></Button></form>{!hideDataControls && <><Button variant="secondary" onClick={refresh} disabled={!configured || loading} aria-label="Refresh records"><RefreshCw className={loading ? "animate-spin" : ""} /></Button>{!isEmployeeProfile && <><Button variant="secondary" disabled={!configured || exporting || Boolean(error)} onClick={() => exportAll(false)}><Download />CSV</Button><Button variant="secondary" disabled={!configured || exporting || Boolean(error)} onClick={() => exportAll(true)}><FileSpreadsheet />{exporting ? "Exporting…" : "Excel"}</Button></>}</>}</div>
+    {entity !== "attendance_records" && entity !== "departments" && <div className="overflow-hidden rounded-xl border bg-white"><div className="flex flex-wrap items-center gap-2 border-b p-4"><form onSubmit={(event) => { event.preventDefault(); setPage(0); setQuery(search.trim()); }} className="flex min-w-0 flex-1 gap-2"><Input aria-label="Search records" maxLength={200} value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search records…" className="max-w-xs" /><Button type="submit" variant="secondary" disabled={!configured}><Search /><span className="sr-only sm:not-sr-only">Search</span></Button></form>{!hideDataControls && <Button variant="secondary" onClick={refresh} disabled={!configured || loading} aria-label="Refresh records"><RefreshCw className={loading ? "animate-spin" : ""} /></Button>}</div>
       {error && <p role="alert" className="m-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
       <div className="overflow-x-auto" aria-busy={loading}><table className="w-full min-w-[740px] text-left text-sm"><thead className="bg-slate-50 text-xs text-slate-500"><tr>{columns.map((key) => <th key={key} className="whitespace-nowrap px-4 py-3 font-medium">{config.fields.find((field) => field.key === key)?.label ?? pretty(key)}</th>)}{!isEmployeeProfile && <th className="px-4 py-3">Actions</th>}</tr></thead><tbody>{rows.map((row) => <tr key={row.id} className={cn("border-t hover:bg-slate-50/70", isEmployeeProfile && "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-slate-400")} onClick={isEmployeeProfile ? () => setDetail(row) : undefined} onKeyDown={isEmployeeProfile ? (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setDetail(row); } } : undefined} tabIndex={isEmployeeProfile ? 0 : undefined} role={isEmployeeProfile ? "button" : undefined} aria-label={isEmployeeProfile ? `View details for ${row.first_name ?? ""} ${row.last_name ?? ""}`.trim() : undefined}>{columns.map((key) => <td key={key} className="max-w-xs px-4 py-4"><span className={cn(key === "status" && "inline-block rounded-md bg-slate-100 px-2 py-1 text-xs font-medium")}>{display(key, row[key])}</span></td>)}{!isEmployeeProfile && <td className="px-4 py-3"><div className="flex items-center gap-1"><Button variant="ghost" size="icon" aria-label="View record" onClick={() => setDetail(row)}><Eye /></Button>{entity === "payroll_runs" && <Link className="whitespace-nowrap px-2 text-xs font-medium text-indigo-600" href={`/payroll-benefits/payroll/${row.id}`}>Open entries</Link>}{canWrite && <><Button variant="ghost" size="icon" aria-label="Edit record" onClick={() => setEditor({ row })}><Pencil /></Button><Button variant="ghost" size="icon" aria-label="View audit history" onClick={() => showHistory(row)}><History /></Button><Button variant="ghost" size="icon" aria-label="Delete record" className="text-red-600" onClick={() => { setDeleting(row); setDeleteError(""); }}><Trash2 /></Button></>}</div></td>}</tr>)}</tbody></table>{!rows.length && !error && <p className="px-6 py-14 text-center text-sm text-slate-500">{loading ? "Loading records…" : query ? "No records match your search." : "No records yet."}</p>}</div><div className="flex items-center justify-between border-t px-4 py-3 text-xs text-slate-500"><span>{count} records · Page {page + 1} of {Math.max(1, Math.ceil(count / 25))}</span><div className="flex gap-2"><Button variant="secondary" size="sm" disabled={page === 0 || loading} onClick={() => setPage((value) => value - 1)}>Previous</Button><Button variant="secondary" size="sm" disabled={(page + 1) * 25 >= count || loading} onClick={() => setPage((value) => value + 1)}>Next</Button></div></div></div>
     }
@@ -245,5 +220,5 @@ function RecordGrid({ entity, roles, configured, setupError, parent, hideDataCon
 
 export function RecordWorkspace(props: Props) {
   const [entity, setEntity] = useState(props.entityKeys[0]);
-  return <div>{props.entityKeys.length > 1 && <nav aria-label="Record categories" className="flex gap-2 overflow-x-auto border-b pb-3">{props.entityKeys.map((key) => <button key={key} onClick={() => setEntity(key)} className={cn("shrink-0 rounded-lg px-4 py-2 text-sm font-medium", entity === key ? "bg-indigo-50 text-indigo-700" : "text-slate-500 hover:bg-slate-50")}>{entities[key].title}</button>)}</nav>}<RecordGrid key={`${entity}-${props.parent ?? ""}`} {...props} entity={entity} /></div>;
+  return <div>{props.entityKeys.length > 1 && <nav aria-label="Record categories" className="flex gap-2 overflow-x-auto border-b pb-3">{props.entityKeys.map((key) => <button key={key} onClick={() => setEntity(key)} className={cn("shrink-0 rounded-lg px-4 py-2 text-sm font-medium", entity === key ? "bg-indigo-50 text-indigo-700" : "text-slate-500 hover:bg-slate-50")}>{entities[key].title}</button>)}</nav>}{entity === "leave_requests" ? <LeaveManagement roles={props.roles} configured={props.configured} /> : <RecordGrid key={`${entity}-${props.parent ?? ""}`} {...props} entity={entity} />}</div>;
 }

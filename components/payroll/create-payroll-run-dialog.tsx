@@ -14,7 +14,7 @@ import { createPayrollRunSchema, type CreatePayrollRunInput } from "@/lib/valida
 const fields: { name: "periodStart" | "periodEnd" | "payDate"; label: string; helper: string }[] = [
   { name: "periodStart", label: "Period start", helper: "First day included" },
   { name: "periodEnd", label: "Period end", helper: "Last day included" },
-  { name: "payDate", label: "Payment date", helper: "When employees are paid" },
+  { name: "payDate", label: "Scheduled pay date", helper: "Planned date for the Finance handoff" },
 ];
 
 export function CreatePayrollRunDialog() {

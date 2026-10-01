@@ -57,6 +57,7 @@ function PayslipDialog({ item, report, onClose }: { item: PayrollReportItem | nu
         <div className="flex flex-col gap-3 rounded-xl border p-4 text-sm sm:flex-row sm:items-end sm:justify-between">
           <div className="text-xs leading-5 text-slate-500">
             <p>Employer contributions: {currency(item.employerContributions)}</p>
+            {Number(item.calculation?.hmoEmployerCost) > 0 && <p>HMO employer cost ({item.calculation?.hmoPricingBasis === "provider_quote" ? "provider quote" : "planning estimate"}): {currency(Number(item.calculation?.hmoEmployerCost))}</p>}
             <p>Taxable compensation: {item.taxableCompensation == null ? "Not recorded" : currency(item.taxableCompensation)}</p>
             <p>Policy: {report.run.policy_name ?? report.run.rule_version ?? "Not recorded"}</p>
           </div>

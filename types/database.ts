@@ -11,6 +11,12 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["profiles"]["Row"]>;
         Relationships: [];
       };
+      hr_analytics_access_grants: {
+        Row: { user_id: string; session_id: string; verified_at: string; expires_at: string };
+        Insert: { user_id: string; session_id: string; verified_at: string; expires_at: string };
+        Update: Partial<Database["public"]["Tables"]["hr_analytics_access_grants"]["Insert"]>;
+        Relationships: [];
+      };
       job_positions: {
         Row: { id:string; department_id:string; title:string; salary_min:number; salary_max:number|null; salary_max_open:boolean; created_at:string; updated_at:string };
         Insert: Omit<Database["public"]["Tables"]["job_positions"]["Row"],"id"|"created_at"|"updated_at"> & { id?:string; created_at?:string; updated_at?:string };
@@ -87,7 +93,10 @@ export type Database = {
       employee_attendance_history: { Args: { p_employee_id: string; p_page?: number; p_size?: number }; Returns: Json };
       department_cards_snapshot: { Args: Record<string, never>; Returns: Json };
       hmo_benefits_snapshot: { Args: Record<string, never>; Returns: Json };
+      save_hmo_package_provider: { Args: { p_package_id: string; p_provider_id: string | null }; Returns: undefined };
       compensation_planning_snapshot: { Args: Record<string, never>; Returns: Json };
+      hr_analytics_snapshot: { Args: { p_months?: number; p_department_id?: string | null; p_location?: string | null; p_employment_type?: string | null }; Returns: Json };
+      has_hr_analytics_access: { Args: Record<string, never>; Returns: boolean };
       save_employee_credential: { Args: { p_employee_id:string; p_credential_name:string; p_issuing_organization:string|null; p_earned_on:string|null; p_expires_on:string|null; p_verification_status:string; p_notes:string|null }; Returns: Json };
       save_position_credential_criterion: { Args: { p_job_position_id:string; p_credential_name:string; p_criterion_type:string; p_notes:string|null }; Returns: Json };
       save_hmo_enrollment: { Args: { p_employee_id:string; p_package_id:string; p_status:string; p_membership_number:string|null; p_effective_date:string|null; p_expiration_date:string|null; p_notes:string|null }; Returns: Json };

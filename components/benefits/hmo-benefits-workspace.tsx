@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { BadgeCheck, HeartPulse, LoaderCircle, Search, UsersRound } from "lucide-react";
+import { BadgeCheck, HeartPulse, LoaderCircle, Plus, Save, Search, UsersRound } from "lucide-react";
 import { toast } from "sonner";
-import { saveHmoEnrollment, type HmoEmployee, type HmoSnapshot } from "@/app/actions/hmo";
+import { readHmoBenefits, saveHmoEnrollment, saveHmoPackageProvider, type HmoEmployee, type HmoSnapshot } from "@/app/actions/hmo";
+import { saveRecord } from "@/app/actions/records";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
@@ -39,6 +40,8 @@ export function HmoBenefitsWorkspace({ configured, canManage, initialSnapshot, i
   const [eligibleOnly, setEligibleOnly] = useState(false);
   const [page, setPage] = useState(0);
   const [editing, setEditing] = useState<HmoEmployee | null>(null);
+  const [providerSelections, setProviderSelections] = useState<Record<string, string>>({});
+  const [newProviderName, setNewProviderName] = useState("");
   const [busy, startTransition] = useTransition();
   const pageSize = 20;
 
@@ -82,6 +85,43 @@ export function HmoBenefitsWorkspace({ configured, canManage, initialSnapshot, i
       } : current);
       setEditing(null);
       toast.success("HMO enrollment updated", { description: `${result.data.name}'s package selection and enrollment details were saved.` });
+    });
+  }
+
+  function savePackageProvider(packageId: string, providerId: string) {
+    startTransition(async () => {
+      const result = await saveHmoPackageProvider({ packageId, providerId: providerId || null });
+      if (!result.ok) {
+        toast.error("Package provider was not saved", { description: result.message });
+        return;
+      }
+      setSnapshot(result.data);
+      setProviderSelections({});
+      toast.success("Package provider updated", { description: "This links the package tier to a provider directory entry." });
+    });
+  }
+
+  function addProvider(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = newProviderName.trim();
+    if (name.length < 2) {
+      toast.error("Enter a provider name with at least two characters.");
+      return;
+    }
+    startTransition(async () => {
+      const result = await saveRecord({ entity: "benefit_providers", values: { name, status: "active" } });
+      if (!result.ok) {
+        toast.error("Provider was not added", { description: result.message });
+        return;
+      }
+      const refreshed = await readHmoBenefits();
+      if (!refreshed.ok) {
+        toast.error("Provider was added, but the directory could not be refreshed", { description: refreshed.message });
+        return;
+      }
+      setSnapshot(refreshed.data);
+      setNewProviderName("");
+      toast.success("Provider added to the directory");
     });
   }
 
@@ -134,16 +174,25 @@ export function HmoBenefitsWorkspace({ configured, canManage, initialSnapshot, i
       </div>
       <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {(snapshot?.packages ?? []).map((item) => <article key={item.id} className="rounded-lg border border-slate-200 p-4">
-          <h3 className="font-semibold text-slate-900">{item.tier}</h3>
+          <div className="flex items-start justify-between gap-2"><h3 className="font-semibold text-slate-900">{item.tier}</h3><span className="rounded-full bg-slate-100 px-2 py-1 text-[11px] font-medium text-slate-600">Package tier</span></div>
           <dl className="mt-3 space-y-2 text-sm">
-            <div className="flex justify-between gap-2"><dt className="text-slate-500">Provider</dt><dd className="text-right text-slate-700">{item.providerName ?? "Not assigned"}</dd></div>
+            <div className="flex justify-between gap-2"><dt className="text-slate-500">Provider</dt><dd className="text-right text-slate-700">{item.providerName ?? "Not linked"}</dd></div>
             <div className="flex justify-between gap-2"><dt className="text-slate-500">Monthly salary</dt><dd className="text-right text-slate-700">{`₱${item.salaryMin.toLocaleString("en-PH")}${item.salaryMax === null ? "+" : `–₱${item.salaryMax.toLocaleString("en-PH")}`}`}</dd></div>
             <div className="flex justify-between gap-2"><dt className="text-slate-500">Annual premium estimate</dt><dd className="text-right text-slate-700">{item.annualPremium === null ? "Not recorded" : `₱${item.annualPremium.toLocaleString("en-PH")}`}</dd></div>
             <div><dt className="text-slate-500">Coverage</dt><dd className="mt-0.5 text-slate-700">{item.coverageDetails || "Details not recorded"}</dd></div>
           </dl>
+          <label className="mt-4 block text-xs font-medium text-slate-600">Provider directory association
+            <select value={providerSelections[item.id] ?? item.providerId ?? ""} onChange={(event) => setProviderSelections((current) => ({ ...current, [item.id]: event.target.value }))} disabled={busy} className="mt-1.5 h-9 w-full rounded-md border bg-white px-2 text-sm font-normal text-slate-800">
+              <option value="">No provider linked</option>
+              {(snapshot?.providers ?? []).filter((provider) => provider.status === "active").map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
+            </select>
+          </label>
+          <Button className="mt-3 w-full" variant="secondary" disabled={busy || (providerSelections[item.id] ?? item.providerId ?? "") === (item.providerId ?? "")} onClick={() => savePackageProvider(item.id, providerSelections[item.id] ?? item.providerId ?? "")}>
+            {busy ? <LoaderCircle className="animate-spin" /> : <Save />}Save provider
+          </Button>
         </article>)}
       </div>
-      <p className="mt-4 text-xs leading-5 text-slate-500">Premium amounts are planning estimates only and are not connected to a provider quote or payroll deduction.</p>
+      <p className="mt-4 text-xs leading-5 text-slate-500">Provider links identify directory associations only. Premiums are planning estimates, not provider quotes, and do not create coverage or payroll deductions.</p>
     </section>}
 
     {activeTab === "providers" && <section role="tabpanel" id="hmo-panel-providers" aria-labelledby="hmo-tab-providers" className="overflow-hidden rounded-xl border bg-white">
@@ -151,6 +200,11 @@ export function HmoBenefitsWorkspace({ configured, canManage, initialSnapshot, i
         <h2 className="font-semibold text-slate-900">HMO providers</h2>
         <p className="mt-1 text-sm text-slate-500">Provider directory entries are not confirmation of a contract, selected plan, or quoted rate.</p>
       </div>
+      <form onSubmit={addProvider} className="flex flex-col gap-2 border-b bg-slate-50/70 p-5 sm:flex-row">
+        <label className="sr-only" htmlFor="hmo-provider-name">Provider name</label>
+        <Input id="hmo-provider-name" value={newProviderName} onChange={(event) => setNewProviderName(event.target.value)} maxLength={160} minLength={2} placeholder="Add a provider to the directory" className="sm:max-w-sm" />
+        <Button type="submit" disabled={busy || newProviderName.trim().length < 2}>{busy ? <LoaderCircle className="animate-spin" /> : <Plus />}Add provider</Button>
+      </form>
       <div className="grid gap-3 p-5 sm:grid-cols-2 xl:grid-cols-3">
         {(snapshot?.providers ?? []).map((provider) => (
           <article key={provider.id} className="rounded-lg border border-slate-200 p-4">
@@ -167,7 +221,7 @@ export function HmoBenefitsWorkspace({ configured, canManage, initialSnapshot, i
         ))}
         {!snapshot?.providers.length && <p className="text-sm text-slate-500">No providers have been added to the provider directory.</p>}
       </div>
-      <p className="px-5 pb-5 text-xs leading-5 text-slate-500">Provider names come from the existing benefits provider directory. Package tiers remain unlinked until an actual provider plan is selected.</p>
+      <p className="px-5 pb-5 text-xs leading-5 text-slate-500">Add providers here, then associate a directory entry with a package tier. Confirm actual plan terms and rates with the provider before enrollment.</p>
     </section>}
 
     {activeTab === "employees" && <section role="tabpanel" id="hmo-panel-employees" aria-labelledby="hmo-tab-employees" className="overflow-hidden rounded-xl border bg-white">

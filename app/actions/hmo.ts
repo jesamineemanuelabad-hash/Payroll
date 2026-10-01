@@ -134,3 +134,37 @@ export async function saveHmoEnrollment(input: unknown): Promise<Result<HmoEmplo
     return { ok: false, message: "Unable to save HMO enrollment. Refresh to check whether the update completed." };
   }
 }
+
+const packageProviderInputSchema = z.object({
+  packageId: z.string().uuid(),
+  providerId: z.string().uuid().nullable(),
+}).strict();
+
+export async function saveHmoPackageProvider(input: unknown): Promise<Result<HmoSnapshot>> {
+  const parsed = packageProviderInputSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Select a provider from the active directory." };
+  if (!hasSupabaseEnvironment()) return { ok: false, message: "Connect Supabase before updating HMO package providers." };
+  try {
+    const db = await createSupabaseServerClient();
+    const { data: auth } = await db.auth.getUser();
+    if (!auth.user) return { ok: false, message: "Your session expired. Sign in again." };
+    const { data: roles, error: roleError } = await db.rpc("record_roles", {});
+    if (roleError) return { ok: false, message: databaseMessage(roleError) };
+    if (!roles?.some((role) => ["super_admin", "hr_admin"].includes(role))) {
+      return { ok: false, message: "Only HR administrators can update HMO package providers." };
+    }
+    const { error } = await db.rpc("save_hmo_package_provider", {
+      p_package_id: parsed.data.packageId,
+      p_provider_id: parsed.data.providerId,
+    });
+    if (error) return { ok: false, message: databaseMessage(error) };
+    const { data: refreshed, error: refreshError } = await db.rpc("hmo_benefits_snapshot", {});
+    if (refreshError) return { ok: false, message: `Provider was saved, but refreshed HMO details could not be loaded: ${databaseMessage(refreshError)}` };
+    const snapshot = snapshotSchema.safeParse(refreshed);
+    if (!snapshot.success) return { ok: false, message: "Provider was saved, but the refreshed HMO data could not be validated." };
+    revalidatePath("/payroll-benefits/benefits");
+    return { ok: true, data: snapshot.data };
+  } catch {
+    return { ok: false, message: "Unable to update the HMO package provider. Refresh to check whether the update completed." };
+  }
+}

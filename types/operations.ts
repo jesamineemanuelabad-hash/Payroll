@@ -1,6 +1,3 @@
-export type ExportValue = string | number | boolean | Date;
-export type ExportRecord = Record<string, ExportValue>;
-
 export type AttendanceClassification = "on_time" | "late" | "absent" | "overtime" | "on_leave";
 export type SyncStatus = "synced" | "pending" | "conflict" | "failed";
 
@@ -61,4 +58,3 @@ export type ClaimRecord = {
   verification: "verified" | "needs_review" | "missing_document";
   status: "draft" | "pending" | "under_review" | "finance_approval" | "approved" | "approved_ess" | "verifying" | "ready_for_payroll" | "included" | "paid" | "rejected";
 };
-

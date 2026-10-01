@@ -57,6 +57,7 @@ export function SalaryProposalsTab({ roles, configured, setupError }: Props) {
   const [page, setPage] = useState(1);
   const [selected, setSelected] = useState<Proposal | null>(null);
   const [rejecting, setRejecting] = useState<Proposal | null>(null);
+  const [confirmation, setConfirmation] = useState<{ proposal: Proposal; status: "pending" | "hr_review" | "finance_review" } | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const pageSize = 10;
   const canReviewHr = configured && roles.some((role) => hrRoles.includes(role));
@@ -164,6 +165,7 @@ export function SalaryProposalsTab({ roles, configured, setupError }: Props) {
       }
       toast.success(status === "rejected" ? "Proposal rejected" : status === "approved" ? "Proposal approved" : status === "pending" ? "Proposal submitted for review" : status === "hr_review" ? "HR review started" : "Sent for Finance review");
       setRejecting(null);
+      setConfirmation(null);
       setSelected(null);
       await refresh();
     } catch {
@@ -189,23 +191,18 @@ export function SalaryProposalsTab({ roles, configured, setupError }: Props) {
     const status = String(proposal.status ?? "");
     const busy = busyId === proposal.id;
     if (status === "draft" && canReviewHr) {
-      return <Button size="sm" variant="secondary" disabled={busy} onClick={() => void updateStatus(proposal, "pending")}><FileCheck2 />Submit for review</Button>;
+      return <Button size="sm" variant="secondary" disabled={busy} onClick={() => setConfirmation({ proposal, status: "pending" })}><FileCheck2 />Submit for review</Button>;
     }
     if (status === "pending" && canReviewHr) {
-      return <Button size="sm" variant="secondary" disabled={busy} onClick={() => void updateStatus(proposal, "hr_review")}><FileCheck2 />Start HR review</Button>;
+      return <Button size="sm" variant="secondary" disabled={busy} onClick={() => setConfirmation({ proposal, status: "hr_review" })}><FileCheck2 />Start HR review</Button>;
     }
     if (status === "hr_review") {
       return <div className="flex flex-wrap gap-1">
-        {canReviewHr && <Button size="sm" variant="secondary" disabled={busy} onClick={() => void updateStatus(proposal, "finance_review")}>Send to Finance</Button>}
-        {(canReviewHr || canReviewFinance) && <Button size="sm" variant="ghost" disabled={busy} className="text-red-700" onClick={() => setRejecting(proposal)}><X className="size-4" />Reject</Button>}
+        {canReviewHr && <Button size="sm" variant="secondary" disabled={busy} onClick={() => setConfirmation({ proposal, status: "finance_review" })}>Send to Finance</Button>}
+        {canReviewHr && <Button size="sm" variant="ghost" disabled={busy} className="text-red-700" onClick={() => setRejecting(proposal)}><X className="size-4" />Reject</Button>}
       </div>;
     }
-    if (status === "finance_review") {
-      return <div className="flex flex-wrap gap-1">
-        {canReviewFinance && <Button size="sm" disabled={busy} onClick={() => void updateStatus(proposal, "approved")}><Check className="size-4" />Approve</Button>}
-        {(canReviewHr || canReviewFinance) && <Button size="sm" variant="ghost" disabled={busy} className="text-red-700" onClick={() => setRejecting(proposal)}><X className="size-4" />Reject</Button>}
-      </div>;
-    }
+    if (status === "finance_review") return <span className="text-xs font-medium text-indigo-700">Awaiting Finance review outside this system</span>;
     return <span className="text-xs text-slate-400">No action</span>;
   }
 
@@ -221,7 +218,7 @@ export function SalaryProposalsTab({ roles, configured, setupError }: Props) {
     {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p>}
     <div className="overflow-hidden rounded-xl border bg-white">
       <div className="flex flex-col gap-3 border-b p-4 sm:flex-row sm:items-center">
-        <div><h2 className="font-semibold text-slate-900">Salary Proposals</h2><p className="mt-1 text-sm text-slate-500">Review proposals through HR and Finance approval stages.</p></div>
+        <div><h2 className="font-semibold text-slate-900">Salary Proposals</h2><p className="mt-1 text-sm text-slate-500">Move proposals through HR review, then hand them off for Finance review and implementation.</p></div>
         <div className="relative sm:ml-auto sm:w-80"><Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" /><Input aria-label="Search salary proposals" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} placeholder="Search employee, cycle, status…" className="pl-9" /></div>
       </div>
       <div className="overflow-x-auto" aria-busy={loading}>
@@ -241,7 +238,7 @@ export function SalaryProposalsTab({ roles, configured, setupError }: Props) {
               <td className="px-4 py-3">{proposal.effective_date ?? "—"}</td>
               <td className="px-4 py-3"><TableStatus label={proposal.within_budget ? "Within budget" : "Over budget"} tone={proposal.within_budget ? "green" : "amber"} /></td>
               <td className="px-4 py-3">{amount(proposal.budget_remaining_after)}</td>
-              <td className="px-4 py-3"><TableStatus label={String(proposal.status ?? "unknown").replaceAll("_", " ")} tone={statusTone(String(proposal.status ?? ""))} /></td>
+              <td className="px-4 py-3"><TableStatus label={proposal.status === "finance_review" ? "For Finance Review" : String(proposal.status ?? "unknown").replaceAll("_", " ")} tone={statusTone(String(proposal.status ?? ""))} /></td>
               <td className="px-4 py-3"><div className="flex min-w-48 items-center gap-1"><Button size="icon" variant="ghost" aria-label="View proposal" title="View proposal" onClick={() => setSelected(proposal)}><Eye className="size-4" /></Button>{actions(proposal)}</div></td>
             </tr>)}
             {!rows.length && <tr><td colSpan={12} className="px-4 py-12 text-center text-sm text-slate-500">{loading ? "Loading proposals…" : error ? "Unable to display proposals." : search ? "No proposals match your search." : "No salary proposals recorded yet."}</td></tr>}
@@ -275,6 +272,13 @@ export function SalaryProposalsTab({ roles, configured, setupError }: Props) {
     <Dialog open={Boolean(rejecting)} onOpenChange={(open) => { if (!open && !busyId) setRejecting(null); }}>
       <DialogContent><DialogTitle>Reject salary proposal</DialogTitle><DialogDescription>Provide a clear reason for the decision. This will be saved with the proposal.</DialogDescription>
         {rejecting && <form onSubmit={rejectProposal} className="mt-4 space-y-4"><label className="block text-sm font-medium text-slate-700">Rejection reason<textarea name="reason" required minLength={2} maxLength={1000} rows={4} className="mt-1.5 w-full rounded-lg border bg-white p-3 text-sm" placeholder="Explain why this proposal is rejected" /></label><div className="flex justify-end gap-2"><Button type="button" variant="secondary" disabled={busyId !== null} onClick={() => setRejecting(null)}>Cancel</Button><Button type="submit" disabled={busyId !== null} className="bg-red-600 hover:bg-red-700">{busyId ? "Saving…" : "Confirm rejection"}</Button></div></form>}
+      </DialogContent>
+    </Dialog>
+    <Dialog open={Boolean(confirmation)} onOpenChange={(open) => { if (!open && !busyId) setConfirmation(null); }}>
+      <DialogContent>
+        <DialogTitle>{confirmation?.status === "finance_review" ? "Send proposal to Finance?" : confirmation?.status === "hr_review" ? "Start HR review?" : "Submit salary proposal for review?"}</DialogTitle>
+        <DialogDescription>{confirmation?.status === "finance_review" ? "The proposal will be marked for Finance review. Finance approval and implementation take place outside this system." : "This changes the proposal to the next HR review stage."}</DialogDescription>
+        {confirmation && <div className="mt-5 flex justify-end gap-2"><Button variant="secondary" disabled={busyId !== null} onClick={() => setConfirmation(null)}>Cancel</Button><Button disabled={busyId !== null} onClick={() => void updateStatus(confirmation.proposal, confirmation.status)}>{busyId ? "Saving…" : confirmation.status === "finance_review" ? "Confirm handoff" : "Confirm"}</Button></div>}
       </DialogContent>
     </Dialog>
   </div>;

@@ -9,14 +9,7 @@ import { formatCurrency } from "@/lib/utils";
 import { CompactMetric, EmployeeCell, OperationsPageHeader, RecordToolbar, TableStatus } from "@/components/shared/operations-ui";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import type { CompensationRecord, ExportRecord } from "@/types/operations";
-
-const exportColumns = [
-  { key: "id", label: "Change ID", width: 16 }, { key: "employeeId", label: "Employee ID", width: 16 }, { key: "employee", label: "Employee", width: 24 },
-  { key: "department", label: "Department", width: 22 }, { key: "currentSalary", label: "Current Salary", width: 18, format: "currency" as const },
-  { key: "proposedSalary", label: "Proposed Salary", width: 18, format: "currency" as const }, { key: "increase", label: "Increase %", width: 14, format: "number" as const },
-  { key: "effectiveDate", label: "Effective Date", width: 16, format: "date" as const }, { key: "reason", label: "Reason", width: 28 }, { key: "status", label: "Status", width: 15 },
-];
+import type { CompensationRecord } from "@/types/operations";
 const statusTone = { draft: "slate", submitted: "amber", approved: "indigo", applied: "green", rejected: "red" } as const;
 
 export function CompensationWorkspace() {
@@ -30,7 +23,6 @@ export function CompensationWorkspace() {
     const query = search.toLowerCase();
     return (!query || `${record.employee} ${record.employeeId} ${record.department} ${record.reason}`.toLowerCase().includes(query)) && (status === "all" || record.status === status);
   }), [records, search, status]);
-  const exports: ExportRecord[] = filtered.map((record) => ({ ...record }));
   const approvedValue = records.filter((record) => record.status === "approved" || record.status === "applied").reduce((sum, record) => sum + record.proposedSalary - record.currentSalary, 0);
 
   function applyApproved() {
@@ -56,7 +48,7 @@ export function CompensationWorkspace() {
       <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px]">
         <section className="overflow-hidden rounded-xl border bg-white shadow-[0_1px_2px_rgba(16,24,40,0.03)]">
           <div className="flex items-center justify-between border-b px-4 py-3.5"><div><h2 className="text-sm font-semibold text-slate-900">Salary changes</h2><p className="mt-0.5 text-xs text-slate-500">{formatCurrency(approvedValue)} in approved annual salary increases</p></div><Button variant="secondary" size="sm" onClick={() => toast.info("New adjustment form opened in demo mode")}><BriefcaseBusiness />New adjustment</Button></div>
-          <RecordToolbar search={search} onSearch={setSearch} placeholder="Search employees or reasons…" columns={exportColumns} records={exports} fileName="compensation-changes-2026" sheetName="Compensation Changes"><div className="relative"><select value={status} onChange={(event) => setStatus(event.target.value)} className="h-9 appearance-none rounded-lg border border-slate-200 bg-white pl-3 pr-8 text-sm text-slate-700 shadow-sm"><option value="all">All statuses</option><option value="draft">Draft</option><option value="submitted">Submitted</option><option value="approved">Approved</option><option value="applied">Applied</option><option value="rejected">Rejected</option></select><ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" /></div></RecordToolbar>
+          <RecordToolbar search={search} onSearch={setSearch} placeholder="Search employees or reasons…"><div className="relative"><select value={status} onChange={(event) => setStatus(event.target.value)} className="h-9 appearance-none rounded-lg border border-slate-200 bg-white pl-3 pr-8 text-sm text-slate-700 shadow-sm"><option value="all">All statuses</option><option value="draft">Draft</option><option value="submitted">Submitted</option><option value="approved">Approved</option><option value="applied">Applied</option><option value="rejected">Rejected</option></select><ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" /></div></RecordToolbar>
           <div className="overflow-x-auto"><table className="w-full min-w-[1100px] text-left text-sm"><thead className="bg-slate-50/80 text-xs text-slate-500"><tr>{["Employee", "Current salary", "Proposed salary", "Increase", "Effective date", "Reason", "Status", ""].map((label) => <th className="h-11 border-b px-4 font-medium" key={label}>{label}</th>)}</tr></thead><tbody>{filtered.map((record) => <tr key={record.id} onClick={() => setSelected(record)} className={`cursor-pointer border-b border-slate-100 last:border-0 hover:bg-slate-50/70 ${selected.id === record.id ? "bg-indigo-50/40" : ""}`}><td className="h-[68px] px-4"><EmployeeCell name={record.employee} initials={record.initials} secondary={`${record.employeeId} · ${record.department}`} /></td><td className="whitespace-nowrap px-4 tabular-nums text-slate-600">{formatCurrency(record.currentSalary)}</td><td className="whitespace-nowrap px-4 font-medium tabular-nums text-slate-900">{formatCurrency(record.proposedSalary)}</td><td className="px-4"><span className={`font-medium ${record.increase >= 10 ? "text-amber-600" : "text-emerald-600"}`}>+{record.increase.toFixed(2)}%</span></td><td className="whitespace-nowrap px-4 text-slate-600">{format(parseISO(record.effectiveDate), "MMM d, yyyy")}</td><td className="max-w-[200px] truncate px-4 text-slate-600">{record.reason}</td><td className="px-4"><TableStatus label={record.status[0].toUpperCase() + record.status.slice(1)} tone={statusTone[record.status]} /></td><td className="px-4" onClick={(event) => event.stopPropagation()}><DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="size-8"><MoreHorizontal /></Button></DropdownMenuTrigger><DropdownMenuContent align="end"><DropdownMenuItem onSelect={() => setSelected(record)}><FileClock />View salary history</DropdownMenuItem><DropdownMenuItem onSelect={() => toast.success("Recommendation submitted")}><Send />Submit recommendation</DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuItem onSelect={() => toast.info("Compensation report prepared")}>Generate report</DropdownMenuItem></DropdownMenuContent></DropdownMenu></td></tr>)}</tbody></table></div>
         </section>
 

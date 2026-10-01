@@ -1,6 +1,6 @@
 # Payroll & Benefits — incremental architecture
 
-> September 6 update: operational routes use `RecordPage` / `RecordWorkspace` and validated Supabase RPCs. Overview and HR Analytics read permission-checked live aggregates; HR Analytics can persist XGBoost predictions; and payroll has a database-side, versioned calculation and approval engine with paid leave, statutory deductions, approved compensation, detailed Excel, and print-ready payslips. See [Supabase setup](supabase-setup.md) for deployment and review requirements.
+> Operational routes use `RecordPage` / `RecordWorkspace` and validated Supabase RPCs. Overview and HR Analytics read permission-checked live aggregates; HR Analytics can persist XGBoost predictions; and payroll has a database-side, versioned calculation and Finance handoff engine with paid leave, statutory deductions, approved compensation, and print-ready payslips. The app prepares payroll but does not record Finance approval or disburse funds. See [Supabase setup](supabase-setup.md) for deployment and review requirements.
 
 ## 1. UX architecture
 
@@ -64,8 +64,8 @@ Pages load their initial data through authenticated Server Components and permis
 
 - `DashboardShell`: responsive navigation and workspace chrome.
 - `PageHeader`, `MetricCard`, `StatusBadge`: shared information primitives.
-- `RecordWorkspace`: live CRUD, search, references, audit history, CSV, and Excel for operational entities.
-- `PayrollRunActions`: calculation, submission, approval, return-to-draft, paid status, register export, and payslip printing.
+- `RecordWorkspace`: live CRUD, search, references, and audit history for operational entities. Import and export controls are intentionally absent.
+- `PayrollRunActions`: calculation, validation, Finance handoff, recall-to-draft, and payslip printing. Finance approval and disbursement happen outside the app.
 - `AccessControl`: invitation, roles, manager scope, payroll eligibility, and Auth-backed account activation.
 - `OverviewDashboard` / `HrAnalyticsDashboard`: live aggregate reporting and model-scoring controls.
 

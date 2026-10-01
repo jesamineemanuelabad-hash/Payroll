@@ -89,7 +89,7 @@ export function CompensationPlanningWorkspace({ snapshot, error, roles, configur
   const belowRange = employees.filter((employee) => rangeState(employee) === "Below range").length;
   const unverified = employees.reduce((count, employee) =>
     count + employee.credentials.filter((credential) => credential.verificationStatus === "pending").length, 0);
-  const canCreateProposals = configured && roles.some((role) => ["hr_admin", "hr_manager"].includes(role));
+  const canCreateProposals = configured && roles.some((role) => ["super_admin", "hr_admin", "hr_manager"].includes(role));
   async function addProposal(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const employee = employees.find((item) => item.id === proposalEmployeeId);

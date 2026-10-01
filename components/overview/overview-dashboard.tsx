@@ -11,7 +11,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { loadLiveDashboard } from "@/app/actions/dashboard";
-import { DownloadOverviewReport } from "@/components/overview/overview-actions";
 import { PayrollStatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { cn, formatCurrency } from "@/lib/utils";
@@ -128,7 +127,7 @@ export function OverviewDashboard({ initialData }: { initialData: LiveDashboardD
   ];
 
   return <div aria-busy={pending}>
-    <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start"><div><div className="flex items-center gap-2"><span className="flex items-center gap-1.5 rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700"><span className="size-1.5 rounded-full bg-emerald-500" />Live Supabase data</span><span className="text-xs text-slate-400">ESS sync: {relativeTime(data.lastSyncAt)}</span></div><div className="mt-3 flex items-center gap-2.5"><h1 className="text-2xl font-semibold tracking-[-0.035em] text-slate-950 sm:text-[30px]">People operations overview</h1><Sparkles className="size-5 text-amber-500" /></div><p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">Live workforce, payroll, benefits, attendance, and approval records in one command center.</p></div><div className="flex flex-wrap items-center gap-2"><DownloadOverviewReport data={data} /><Button variant="secondary" onClick={() => update(filters,"Dashboard refreshed")} disabled={pending}><RefreshCw className={pending ? "animate-spin" : ""} />{pending ? "Refreshing…" : "Refresh"}</Button><Button asChild><Link href="/payroll-benefits/payroll">Review payroll<ArrowRight /></Link></Button></div></div>
+    <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start"><div><div className="flex items-center gap-2"><span className="flex items-center gap-1.5 rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700"><span className="size-1.5 rounded-full bg-emerald-500" />Live Supabase data</span><span className="text-xs text-slate-400">ESS sync: {relativeTime(data.lastSyncAt)}</span></div><div className="mt-3 flex items-center gap-2.5"><h1 className="text-2xl font-semibold tracking-[-0.035em] text-slate-950 sm:text-[30px]">People operations overview</h1><Sparkles className="size-5 text-amber-500" /></div><p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">Live workforce, payroll, benefits, attendance, and approval records in one command center.</p></div><div className="flex flex-wrap items-center gap-2"><Button variant="secondary" onClick={() => update(filters,"Dashboard refreshed")} disabled={pending}><RefreshCw className={pending ? "animate-spin" : ""} />{pending ? "Refreshing…" : "Refresh"}</Button><Button asChild><Link href="/payroll-benefits/payroll">Review payroll<ArrowRight /></Link></Button></div></div>
 
     {error && <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { PGlite } from "@electric-sql/pglite";
+import { calculateLeaveBalances } from "../lib/leave/balances";
 import { entities, modules } from "../lib/records/config";
 import { recordSchema } from "../lib/records/validation";
 
@@ -17,14 +18,33 @@ test("server validation rejects invalid values and client-supplied protected fie
   assert.equal(recordSchema("payroll_runs", true).safeParse({ period_start: "2026-09-01", period_end: "2026-09-15", pay_date: "2026-09-20", total_net: 100 }).success, false);
   assert.equal(recordSchema("departments", true).safeParse({ name: "Finance", code: "fin" }).success, false);
   assert.equal(recordSchema("departments", true).safeParse({ name: "Finance", code: "FIN" }).success, true);
+  assert.equal(recordSchema("leave_requests", true).safeParse({ employee_id: worker, leave_type: "bereavement", start_date: "2026-09-01", end_date: "2026-09-01", total_days: 1, is_paid: true, reason: "Family matter", status: "draft", rejection_reason: null }).success, true);
+  assert.equal(recordSchema("leave_requests", true).safeParse({ employee_id: worker, leave_type: "unknown", start_date: "2026-09-01", end_date: "2026-09-01", total_days: 1, is_paid: true, reason: "Family matter", status: "draft", rejection_reason: null }).success, false);
 });
 
-test("leave approvals are hidden from Employee Management while leave records remain configured", () => {
-  assert.deepEqual(modules.attendance, ["profiles", "attendance_records", "departments"]);
+test("leave management is beside Attendance in Employee Management and leave records are configured", () => {
+  assert.deepEqual(modules.attendance, ["profiles", "attendance_records", "leave_requests", "departments"]);
   assert.ok(entities.leave_requests);
+  assert.equal(entities.profiles.createNotice, undefined);
   assert.ok(entities.leave_requests.fields.some((field) => field.key === "is_paid"));
+  assert.ok(entities.leave_requests.fields.find((field) => field.key === "leave_type")?.options?.includes("bereavement"));
   assert.deepEqual(modules.credentials, ["job_position_credential_criteria", "job_positions", "departments"]);
   assert.equal(entities.job_position_credential_criteria.title, "Position credentials");
+});
+
+test("leave balances use the shared annual paid-leave banks and refresh from approved usage", () => {
+  const balances = calculateLeaveBalances([
+    { leave_type: "vacation", start_date: "2026-03-02", total_days: 2, is_paid: true, status: "approved" },
+    { leave_type: "service_incentive", start_date: "2026-05-04", total_days: 1, is_paid: true, status: "approved" },
+    { leave_type: "annual", start_date: "2026-06-01", total_days: 3, is_paid: true, status: "submitted" },
+    { leave_type: "sick", start_date: "2026-07-01", total_days: 2, is_paid: true, status: "approved" },
+    { leave_type: "sick", start_date: "2026-08-01", total_days: 1, is_paid: false, status: "approved" },
+    { leave_type: "vacation", start_date: "2025-12-20", total_days: 2, is_paid: true, status: "approved" },
+  ], 2026);
+  assert.deepEqual(balances, [
+    { key: "vacation", label: "Vacation / annual leave", entitlement: 10, used: 3, remaining: 7 },
+    { key: "sick", label: "Sick leave", entitlement: 10, used: 2, remaining: 8 },
+  ]);
 });
 
 test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t) => {
@@ -54,6 +74,16 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
     await db.exec(simulationActorsMigration);
     const payrollCalculationViewsMigration = await readFile(new URL("../scripts/supabase/migrations/202610010006_payroll_calculation_views.sql", import.meta.url), "utf8");
     await db.exec(payrollCalculationViewsMigration);
+    const expandLeaveTypesMigration = await readFile(new URL("../scripts/supabase/migrations/202610010007_expand_leave_types.sql", import.meta.url), "utf8");
+    await db.exec(expandLeaveTypesMigration);
+    const claimReceiptsAndHmoPayrollMigration = await readFile(new URL("../scripts/supabase/migrations/202610010008_claim_receipts_and_hmo_payroll.sql", import.meta.url), "utf8");
+    await db.exec(claimReceiptsAndHmoPayrollMigration);
+    const financeHandoffAndHmoProviderMigration = await readFile(new URL("../scripts/supabase/migrations/202610010009_finance_handoff_and_hmo_package_providers.sql", import.meta.url), "utf8");
+    await db.exec(financeHandoffAndHmoProviderMigration);
+    const hrWorkforceAnalyticsMigration = await readFile(new URL("../scripts/supabase/migrations/202610010010_hr_workforce_analytics.sql", import.meta.url), "utf8");
+    await db.exec(hrWorkforceAnalyticsMigration);
+    const hrAnalyticsPasswordGateMigration = await readFile(new URL("../scripts/supabase/migrations/202610010011_hr_analytics_password_gate.sql", import.meta.url), "utf8");
+    await db.exec(hrAnalyticsPasswordGateMigration);
     await db.exec("grant all privileges on all tables in schema public to service_role");
     for (const id of [admin, reviewer, worker, outsider, systemAdmin]) {
       await db.query("insert into auth.users(id) values ($1)", [id]);
@@ -316,12 +346,17 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       await as(reviewer);
       const hrReview=await update("compensation_reviews",pending,{status:"hr_review"});
       const financeReview=await update("compensation_reviews",hrReview,{status:"finance_review"});
-      await assert.rejects(update("compensation_reviews",financeReview,{status:"approved"}),/Finance review permission/i);
       await as(admin);
-      const approved=await update("compensation_reviews",financeReview,{status:"approved"});
-      assert.equal(approved.applied_at,null);
-      const implemented=await update("compensation_reviews",approved,{status:"implemented"});
-      assert.ok(implemented.applied_at);
+      await assert.rejects(update("compensation_reviews",financeReview,{status:"approved"}),/Finance approval and implementation are handled outside this system/i);
+      await assert.rejects(update("compensation_reviews",financeReview,{status:"rejected"}),/Finance approval and implementation are handled outside this system/i);
+      await db.exec("reset role");
+      await db.query("select set_config('request.jwt.claim.sub','',false)");
+      await db.exec("set role service_role");
+      await db.query("update public.compensation_reviews set status='approved',approved_by=$2 where id=$1",[proposal.id,admin]);
+      const implemented=await db.query<{applied_at:Date}>("update public.compensation_reviews set status='implemented' where id=$1 returning applied_at",[proposal.id]);
+      assert.ok(implemented.rows[0].applied_at);
+      await db.exec("reset role");
+      await as(admin);
       const salary=await db.query<{base_salary:string;effective_from:Date;source:string}>("select base_salary,effective_from,source from public.employee_compensation_history where source_review_id=$1",[proposal.id]);
       assert.equal(Number(salary.rows[0].base_salary),35000);
       assert.equal(salary.rows[0].effective_from.toISOString().slice(0,10),"2026-10-01");
@@ -437,9 +472,9 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       created.employee_benefits = await update("employee_benefits", created.employee_benefits, { eligibility: "eligible", status: "active" });
       assert.equal((await read("employee_benefits")).rows[0].status, "active");
     });
-    await t.test("HMO policy lists eligibility and saves HR-managed package enrollment", async () => {
-      await as(reviewer);
-      const initial = await db.query<{ value: { policy: { employerSharePercent: number }; packages: { id: string; tier: string; annualPremium: number | null; providerId: string | null; salaryMin: number; salaryMax: number | null; pricingBasis: string }[]; providers: { name: string; status: string; packageTiers: string[] }[]; employees: { id: string; eligible: boolean; status: string | null; currentMonthlySalary: number | null; recommendedPackageId: string | null }[] } }>(
+    await t.test("Super Admin can link HMO package providers and manage enrollment", async () => {
+      await as(admin);
+      const initial = await db.query<{ value: { policy: { employerSharePercent: number }; packages: { id: string; tier: string; annualPremium: number | null; providerId: string | null; salaryMin: number; salaryMax: number | null; pricingBasis: string }[]; providers: { id: string; name: string; status: string; packageTiers: string[] }[]; employees: { id: string; eligible: boolean; status: string | null; currentMonthlySalary: number | null; recommendedPackageId: string | null }[] } }>(
         "select public.hmo_benefits_snapshot() value",
       );
       assert.deepEqual(initial.rows[0].value.packages.map((item) => item.tier), ["Executive", "Premium", "Standard Plus", "Standard"]);
@@ -464,8 +499,18 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       assert.equal(initial.rows[0].value.employees.find((item) => item.id === reviewer)?.eligible, false);
       const standardPlus = initial.rows[0].value.packages.find((item) => item.tier === "Standard Plus");
       const standard = initial.rows[0].value.packages.find((item) => item.tier === "Standard");
+      const maxicare = initial.rows[0].value.providers.find((provider) => provider.name === "Maxicare");
       assert.ok(standardPlus);
       assert.ok(standard);
+      assert.ok(maxicare);
+      await db.query("select public.save_hmo_package_provider($1,$2)", [standard.id, maxicare.id]);
+      const linked = await db.query<{ provider_id:string; name:string }>(
+        "select tier.provider_id,provider.name from public.hmo_package_tiers tier join public.benefit_providers provider on provider.id=tier.provider_id where tier.id=$1",
+        [standard.id],
+      );
+      assert.equal(linked.rows[0].provider_id, maxicare.id);
+      assert.equal(linked.rows[0].name, "Maxicare");
+      assert.equal(Number((await db.query<{ count:number }>("select count(*) count from public.audit_logs where entity_type='hmo_package_tiers' and entity_id=$1", [standard.id])).rows[0].count), 1);
       await db.query(
         "select public.save_hmo_enrollment($1,$2,'pending',null,null,null,null)",
         [worker, standardPlus.id],
@@ -495,19 +540,30 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       await db.exec("reset role");
       await as(admin);
     });
-    await t.test("claims CRUD validates review and preserves approved records", async () => {
+    await t.test("claims workflow hands off to Finance without approving or paying in-app", async () => {
       created.claims = await create("claims", { employee_id: worker, claim_number: "CLM-1", category: "medical", expense_date:"2026-09-02", description: "Receipt", requested_amount: 500, approved_amount: 0, status: "draft" });
       created.claims = await update("claims", created.claims, { requested_amount: 600 });
       const decision = await create("claims", { employee_id: worker, claim_number: "CLM-APPROVAL", category: "transportation", expense_date:"2026-09-03", description: "Company travel", requested_amount: 2500, approved_amount: 2000, status: "draft" });
       await assert.rejects(update("claims", decision, { status: "approved" }), /Invalid claim transition/);
       const pending = await update("claims", decision, { status: "pending" });
-      const reviewed = await update("claims", pending, { status: "under_review" });
-      const finance = await update("claims", reviewed, { receipt_url: "https://example.com/receipt.pdf", verification_status: "verified", status: "finance_approval" });
-      const approved = await update("claims", finance, { status: "approved" });
-      assert.equal(approved.approver_id, admin); assert.equal(approved.amount,2000); assert.equal(approved.requested_amount,2500);
-      await assert.rejects(remove("claims", approved), /Only drafts|read-only/);
-      const paid=await update("claims",approved,{status:"paid"});
-      assert.ok(paid.paid_at);
+      await assert.rejects(update("claims", pending, { status: "finance_approval" }), /Invalid claim transition/);
+      const reviewed = await update("claims", pending, { receipt_url: "https://example.com/receipt.pdf", verification_status: "verified", status: "under_review" });
+      const finance = await update("claims", reviewed, { status: "finance_approval" });
+      await assert.rejects(update("claims", finance, { status: "approved" }), /Finance approval and disbursement are handled outside this system/i);
+      assert.equal(finance.status, "finance_approval");
+      await db.exec("reset role");
+      await db.query("select set_config('request.jwt.claim.sub','',false)");
+      await db.exec("set role service_role");
+      const financeDecision = await db.query<{ value: Row }>(
+        "update public.claims set status='approved',amount=approved_amount,approved_at=now(),finance_approver_id=$2,finance_approved_at=now(),approver_id=$2,reviewer_id=$2,reviewed_at=now() where id=$1 returning to_jsonb(public.claims.*) value",
+        [finance.id, admin],
+      );
+      const externallyApproved = financeDecision.rows[0].value;
+      assert.equal(externallyApproved.approver_id, admin); assert.equal(externallyApproved.amount,2000); assert.equal(externallyApproved.requested_amount,2500);
+      await db.exec("reset role");
+      await as(admin);
+      await assert.rejects(update("claims", externallyApproved, { status: "paid" }), /Finance approval and disbursement are handled outside this system/i);
+      await assert.rejects(remove("claims", externallyApproved), /Only drafts|read-only/);
     });
     await t.test("payroll run/item CRUD calculates totals transactionally and rejects negative net", async () => {
       created.payroll_runs = await create("payroll_runs", { period_start: "2026-09-01", period_end: "2026-09-15", pay_date: "2026-09-20" });
@@ -523,9 +579,36 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       created.payroll_items = await update("payroll_items", created.payroll_items, { status: "ready" });
     });
     await t.test("live reporting excludes the owner and persists validated model output", async () => {
+      await as(admin);
       const snapshot = await db.query<{ value: { summary: { employeeCount: number; currentGross: number }; model: null | { recordsScored: number }; anomalies: unknown[] } }>("select public.dashboard_snapshot(12,null,null,null) value");
       assert.equal(snapshot.rows[0].value.summary.employeeCount, 3);
       assert.equal(snapshot.rows[0].value.summary.currentGross, 1200);
+      await assert.rejects(db.query("select public.hr_analytics_snapshot(12,null,null,null)"), /password verification/i);
+      await db.exec("reset role");
+      await db.exec("set role service_role");
+      await db.query("insert into public.hr_analytics_access_grants(user_id,session_id,verified_at,expires_at) values ($1,$1,now(),now()+interval '15 minutes')", [admin]);
+      await as(admin);
+      assert.equal((await db.query<{ value: boolean }>("select public.has_hr_analytics_access() value")).rows[0].value, true);
+      await assert.rejects(db.query("select public.hr_analytics_snapshot_unlocked(12,null,null,null)"), /permission denied/i);
+      const hrSnapshot = await db.query<{ value: { summary: { headcount: number; activeEmployees: number; newHires: number }; attendance: { total: number; classes: { classification: string; count: number }[] }; compensationBands: { label: string; count: number }[] } }>("select public.hr_analytics_snapshot(12,null,null,null) value");
+      assert.equal(hrSnapshot.rows[0].value.summary.headcount, 3);
+      assert.equal(hrSnapshot.rows[0].value.summary.activeEmployees, 3);
+      assert.equal(hrSnapshot.rows[0].value.attendance.total, 1);
+      assert.equal(hrSnapshot.rows[0].value.attendance.classes.reduce((total, item) => total + item.count, 0), 1);
+      assert.equal(hrSnapshot.rows[0].value.compensationBands.reduce((total, band) => total + band.count, 0), 1);
+      await db.query("select set_config('request.jwt.claim.session_id',$1,false)", [reviewer]);
+      await assert.rejects(db.query("select public.hr_analytics_snapshot(12,null,null,null)"), /password verification/i);
+      await db.query("select set_config('request.jwt.claim.session_id',$1,false)", [admin]);
+      await db.exec("reset role");
+      await db.exec("set role service_role");
+      await db.query("update public.hr_analytics_access_grants set verified_at=now()-interval '1 hour',expires_at=now()-interval '1 second' where user_id=$1 and session_id=$1", [admin]);
+      await as(admin);
+      await assert.rejects(db.query("select public.hr_analytics_snapshot(12,null,null,null)"), /password verification/i);
+      await db.exec("reset role");
+      await db.exec("set role service_role");
+      await db.query("update public.hr_analytics_access_grants set expires_at=now()+interval '15 minutes' where user_id=$1 and session_id=$1", [admin]);
+      await as(admin);
+      await assert.rejects(db.query("select public.hr_analytics_snapshot(4,null,null,null)"), /Invalid reporting range/i);
       const accuracy = await db.query<{ value: { coverage: { employees: number; attendanceRecords: number }; payroll: { totalDeductions: number } } }>("select public.analytics_accuracy_snapshot(12,null,null,null) value");
       assert.equal(accuracy.rows[0].value.coverage.employees, 3);
       assert.equal(accuracy.rows[0].value.coverage.attendanceRecords, 1);
@@ -540,12 +623,31 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       assert.equal(refreshed.rows[0].value.anomalies.length, 1);
     });
     await t.test("payroll engine itemizes late minutes, overtime, statutory deductions, paid leave, and payslips", async () => {
+      await db.exec("set role service_role");
+      await db.query(
+        "update public.hmo_enrollments set status='active',membership_number='STD-EMP',effective_date='2026-09-01',expiration_date='2026-09-30' where employee_id=$1",
+        [worker],
+      );
+      await db.query("update public.hmo_policy set effective_from='2026-09-01' where id=true");
+      await db.exec("reset role");
+      await db.exec("set role authenticated");
       created.attendance_records = await update("attendance_records", created.attendance_records, { classification: "late", late_minutes: 30, overtime_minutes: 60, night_minutes: 60, work_day_type: "rest_day" });
       created.payroll_items = await update("payroll_items", created.payroll_items, { attendance_adjustments: 0, benefits: 0, deductions: 0, other_deductions: 0 });
       const leave = await create("leave_requests", { employee_id: worker, leave_type: "vacation", start_date: "2026-09-02", end_date: "2026-09-02", total_days: 1, is_paid: true, reason: "Approved paid leave", status: "draft" });
       const submitted = await update("leave_requests", leave, { status: "submitted" });
       const approved = await update("leave_requests", submitted, { status: "approved" });
       assert.equal(approved.approved_by, admin);
+      const annualLeave = await create("leave_requests", { employee_id: worker, leave_type: "annual", start_date: "2026-09-10", end_date: "2026-09-10", total_days: 1, is_paid: true, reason: "Annual leave", status: "draft", rejection_reason: null });
+      const submittedAnnual = await update("leave_requests", annualLeave, { status: "submitted" });
+      await update("leave_requests", submittedAnnual, { status: "approved" });
+      const unpaidLeave = await create("leave_requests", { employee_id: worker, leave_type: "unpaid", start_date: "2026-09-11", end_date: "2026-09-11", total_days: 1, is_paid: false, reason: "Unpaid leave", status: "draft", rejection_reason: null });
+      const submittedUnpaid = await update("leave_requests", unpaidLeave, { status: "submitted" });
+      await update("leave_requests", submittedUnpaid, { status: "approved" });
+      const newCategory = await create("leave_requests", { employee_id: outsider, leave_type: "bereavement", start_date: "2026-10-05", end_date: "2026-10-05", total_days: 1, is_paid: true, reason: "Bereavement", status: "draft", rejection_reason: null });
+      const submittedNewCategory = await update("leave_requests", newCategory, { status: "submitted" });
+      const rejectedNewCategory = await update("leave_requests", submittedNewCategory, { status: "rejected", rejection_reason: "Please resubmit with updated dates." });
+      assert.equal(rejectedNewCategory.status, "rejected");
+      assert.equal(rejectedNewCategory.rejection_reason, "Please resubmit with updated dates.");
       await create("attendance_records", { employee_id: worker, external_id: "MANUAL-PAID-LEAVE", attendance_date: "2026-09-02", classification: "absent", absence_minutes: 480 });
 
       const sss = await db.query<{ value: { msc: number; employee: number; employer: number } }>("select public.sss_monthly_contribution(32000) value");
@@ -557,11 +659,11 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       const calculation = await db.query<{ value: { employees: number; ruleVersion: string } }>("select public.calculate_payroll_run_complete($1) value", [created.payroll_runs.id]);
       assert.equal(calculation.rows[0].value.employees, 1);
       assert.equal(calculation.rows[0].value.ruleVersion, "PH-2025-BIR-2023-v2");
-      const report = await db.query<{ value: { run: { schedule: string; preparation_date: string }; items: Array<Record<string, number>> } }>("select public.payroll_run_report($1) value", [created.payroll_runs.id]);
+      const report = await db.query<{ value: { run: { schedule: string; preparation_date: string }; items: Array<Record<string, unknown>> } }>("select public.payroll_run_report($1) value", [created.payroll_runs.id]);
       const item = report.rows[0].value.items[0];
       assert.equal(report.rows[0].value.run.schedule, "first_cutoff");
       assert.equal(report.rows[0].value.run.preparation_date, "2026-09-19");
-      assert.equal(item.paidLeaveDays, 1);
+      assert.equal(item.paidLeaveDays, 2);
       assert.equal(item.lateMinutes, 30);
       assert.equal(item.lateDeduction, 90.91);
       assert.equal(item.absenceMinutes, 0);
@@ -573,23 +675,37 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       assert.equal(item.sssEmployee, 800);
       assert.equal(item.philhealthEmployee, 400);
       assert.equal(item.pagibigEmployee, 100);
-      assert.ok(item.withholdingTax > 0);
-      assert.ok(item.taxableCompensation > 0);
-      assert.ok(item.netPay < item.grossPay);
+      assert.ok(Number(item.withholdingTax) > 0);
+      assert.ok(Number(item.taxableCompensation) > 0);
+      assert.ok(Number(item.netPay) < Number(item.grossPay));
+      assert.equal(item.benefitEmployer, 600);
+      const calculationSnapshot = item.calculation as Record<string, unknown>;
+      assert.equal(calculationSnapshot.hmoEmployerCost, 500);
+      assert.equal(calculationSnapshot.hmoPricingBasis, "planning_estimate");
+      await db.query("select public.calculate_payroll_run_complete($1)", [created.payroll_runs.id]);
+      const afterRecalculation = await db.query<{ value: { items: Array<Record<string, unknown>> } }>("select public.payroll_run_report($1) value", [created.payroll_runs.id]);
+      assert.equal(afterRecalculation.rows[0].value.items[0].benefitEmployer, 600);
+      assert.equal((afterRecalculation.rows[0].value.items[0].calculation as Record<string, unknown>).hmoEmployerCost, 500);
       created.payroll_items = (await read("payroll_items", created.payroll_items.id)).rows[0];
     });
     await t.test("approved bonuses are idempotent and payroll follows approval states", async () => {
       const run=await create("payroll_runs",{period_start:"2026-10-01",period_end:"2026-10-15",pay_date:"2026-10-15"});
-      await db.query("select public.calculate_payroll_run_complete($1)",[run.id]);
-      await db.query("select public.calculate_payroll_run_complete($1)",[run.id]);
+      const firstCalculation=await db.query<{value:{validation:{passed:boolean;issues:unknown[];comparisons:unknown[]}}}>("select public.calculate_payroll_run_complete($1) value",[run.id]);
+      if(!firstCalculation.rows[0].value.validation.passed) throw new Error(JSON.stringify(firstCalculation.rows[0].value.validation));
+      const secondCalculation=await db.query<{value:{validation:{passed:boolean;issues:unknown[];comparisons:unknown[]}}}>("select public.calculate_payroll_run_complete($1) value",[run.id]);
+      if(!secondCalculation.rows[0].value.validation.passed) throw new Error(JSON.stringify(secondCalculation.rows[0].value.validation));
       const report=await db.query<{value:{items:Array<{bonus:number}>}}>("select public.payroll_run_report($1) value",[run.id]);
       assert.equal(report.rows[0].value.items[0].bonus,1000);
       const submitted=await db.query<{value:{status:string}}>("select public.transition_payroll_run($1,'pending_approval') value",[run.id]);
       assert.equal(submitted.rows[0].value.status,"pending_approval");
-      const approved=await db.query<{value:{status:string}}>("select public.transition_payroll_run($1,'approved') value",[run.id]);
-      assert.equal(approved.rows[0].value.status,"approved");
-      const paid=await db.query<{value:{status:string}}>("select public.transition_payroll_run($1,'paid') value",[run.id]);
-      assert.equal(paid.rows[0].value.status,"paid");
+      await assert.rejects(db.query("select public.transition_payroll_run($1,'approved')",[run.id]),/Finance approval and disbursement are handled outside this system/i);
+      await db.exec("reset role");
+      await db.query("select set_config('request.jwt.claim.sub','',false)");
+      await db.exec("set role service_role");
+      await db.query("update public.payroll_runs set status='approved',approved_by=$2,approved_at=now() where id=$1",[run.id,admin]);
+      await db.query("update public.payroll_runs set status='paid' where id=$1",[run.id]);
+      await db.exec("reset role");
+      await as(admin);
       await assert.rejects(db.query("select public.transition_payroll_run($1,'draft')",[run.id]),/Invalid payroll transition/);
       await as(admin);
       const snapshot = await db.query<{ value: { items: Array<{ employeeId: string; paidBasicSalary: number; amount: number; paidPayrollEntries: number }> } }>("select public.payroll_13th_month_snapshot(2026) value");

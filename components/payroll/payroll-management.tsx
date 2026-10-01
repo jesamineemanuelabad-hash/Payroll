@@ -37,9 +37,9 @@ const statusOptions: { value: "all" | PayrollStatus; label: string }[] = [
   { value: "all", label: "All statuses" },
   { value: "draft", label: "Draft" },
   { value: "processing", label: "Processing" },
-  { value: "pending_approval", label: "Pending approval" },
-  { value: "approved", label: "Approved" },
-  { value: "paid", label: "Paid" },
+  { value: "pending_approval", label: "Waiting for Finance" },
+  { value: "approved", label: "Pending disbursement" },
+  { value: "paid", label: "Payment recorded" },
   { value: "failed", label: "Failed" },
 ];
 
