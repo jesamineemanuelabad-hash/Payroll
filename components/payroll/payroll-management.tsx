@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { format, parseISO } from "date-fns";
 import {
   ArrowUpDown,
@@ -12,10 +13,13 @@ import {
   ChevronRight,
   CircleAlert,
   Eye,
+  LoaderCircle,
   Search,
   SlidersHorizontal,
+  Trash2,
   X,
 } from "lucide-react";
+import { toast } from "sonner";
 import {
   flexRender,
   getCoreRowModel,
@@ -29,7 +33,9 @@ import { CreatePayrollRunDialog } from "@/components/payroll/create-payroll-run-
 import { MetricCard } from "@/components/shared/metric-card";
 import { PayrollStatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { deleteDraftPayrollRun } from "@/app/actions/payroll";
 import { formatCurrency } from "@/lib/utils";
 import type { PayrollDashboardData, PayrollRun, PayrollStatus } from "@/types/payroll";
 
@@ -47,17 +53,24 @@ function SortHeader({ label, onClick }: { label: string; onClick: () => void }) 
   return <button onClick={onClick} className="flex items-center gap-1.5 whitespace-nowrap font-medium text-slate-500 hover:text-slate-800">{label}<ArrowUpDown className="size-3.5 text-slate-400" /></button>;
 }
 
-function RowActions({ run }: { run: PayrollRun }) {
-  return <Button variant="ghost" size="icon" asChild className="size-8"><Link href={`/payroll-benefits/payroll/${run.id}`} aria-label={`View payroll run ending ${run.periodEnd}`}><Eye /></Link></Button>;
+function RowActions({ run, canDelete, onDelete }: { run: PayrollRun; canDelete: boolean; onDelete: (run: PayrollRun) => void }) {
+  return <div className="flex items-center gap-1">
+    <Button variant="ghost" size="icon" asChild className="size-8"><Link href={`/payroll-benefits/payroll/${run.id}`} aria-label={`View payroll run ending ${run.periodEnd}`}><Eye /></Link></Button>
+    {canDelete && run.status === "draft" && <Button variant="ghost" size="icon" className="size-8 text-rose-600 hover:text-rose-700" aria-label={`Delete draft payroll run ${run.periodStart} to ${run.periodEnd}`} onClick={() => onDelete(run)}><Trash2 /></Button>}
+  </div>;
 }
 
-export function PayrollManagement({ data }: { data: PayrollDashboardData }) {
+export function PayrollManagement({ data, canDeleteDraftRuns }: { data: PayrollDashboardData; canDeleteDraftRuns: boolean }) {
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState<"all" | PayrollStatus>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [showDates, setShowDates] = useState(false);
   const [sorting, setSorting] = useState<SortingState>([{ id: "periodStart", desc: true }]);
+  const [deletingRun, setDeletingRun] = useState<PayrollRun | null>(null);
+  const [deleteError, setDeleteError] = useState("");
+  const [deleteBusy, startDelete] = useTransition();
+  const router = useRouter();
 
   const filteredRuns = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -69,6 +82,25 @@ export function PayrollManagement({ data }: { data: PayrollDashboardData }) {
         (!dateTo || run.periodEnd <= dateTo);
     });
   }, [data.runs, dateFrom, dateTo, search, status]);
+
+  function confirmDelete() {
+    if (!deletingRun || deleteBusy) return;
+    startDelete(async () => {
+      const result = await deleteDraftPayrollRun(deletingRun.id);
+      if (!result.ok) {
+        setDeleteError(result.message);
+        toast.error("Draft payroll run was not deleted", { description: result.message });
+        router.refresh();
+        return;
+      }
+      toast.success("Draft payroll run deleted", {
+        description: `Removed the run and ${result.deletedEntries} calculated employee entr${result.deletedEntries === 1 ? "y" : "ies"}. Employee profiles, salary history, attendance, and other source records were not changed.`,
+      });
+      setDeletingRun(null);
+      setDeleteError("");
+      router.refresh();
+    });
+  }
 
   const columns = useMemo<ColumnDef<PayrollRun>[]>(() => [
     {
@@ -90,8 +122,8 @@ export function PayrollManagement({ data }: { data: PayrollDashboardData }) {
     { accessorKey: "contributions", header: "Employer contributions", cell: ({ getValue }) => <span className="whitespace-nowrap tabular-nums text-slate-600">{formatCurrency(getValue<number>())}</span> },
     { accessorKey: "netPay", header: ({ column }) => <SortHeader label="Net pay" onClick={() => column.toggleSorting(column.getIsSorted() === "asc")} />, cell: ({ getValue }) => <span className="whitespace-nowrap font-medium tabular-nums text-slate-900">{formatCurrency(getValue<number>())}</span> },
     { accessorKey: "status", header: "Status", cell: ({ getValue }) => <PayrollStatusBadge status={getValue<PayrollStatus>()} /> },
-    { id: "actions", header: () => <span className="sr-only">Actions</span>, cell: ({ row }) => <RowActions run={row.original} /> },
-  ], []);
+    { id: "actions", header: () => <span className="sr-only">Actions</span>, cell: ({ row }) => <RowActions run={row.original} canDelete={canDeleteDraftRuns} onDelete={(run) => { setDeleteError(""); setDeletingRun(run); }} /> },
+  ], [canDeleteDraftRuns, setDeleteError]);
 
   // TanStack Table intentionally returns stateful functions; React Compiler skips this hook.
   // eslint-disable-next-line react-hooks/incompatible-library
@@ -179,6 +211,25 @@ export function PayrollManagement({ data }: { data: PayrollDashboardData }) {
           </div>
         </div>
       </section>
+
+      <Dialog open={Boolean(deletingRun)} onOpenChange={(open) => { if (!open && !deleteBusy) { setDeletingRun(null); setDeleteError(""); } }}>
+        <DialogContent>
+          <DialogTitle>Delete draft payroll run?</DialogTitle>
+          <DialogDescription>
+            {deletingRun && <>
+              This permanently removes the {format(parseISO(deletingRun.periodStart), "MMM d, yyyy")}–{format(parseISO(deletingRun.periodEnd), "MMM d, yyyy")} draft cycle and its calculated payroll entries. Employee profiles, salary history, attendance, leave, and other source records will remain unchanged. You can recreate this cutoff after deletion.
+            </>}
+          </DialogDescription>
+          {deleteError && <p role="alert" className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">{deleteError}</p>}
+          <div className="mt-5 flex justify-end gap-2">
+            <Button variant="secondary" onClick={() => setDeletingRun(null)} disabled={deleteBusy}>Cancel</Button>
+            <Button variant="danger" onClick={confirmDelete} disabled={deleteBusy}>
+              {deleteBusy ? <LoaderCircle className="animate-spin" /> : <Trash2 />}
+              {deleteBusy ? "Deleting…" : "Delete draft run"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-400">
         {data.isConfigured && (data.runs.some((run) => run.status === "failed") ? <CircleAlert className="size-3.5 text-amber-500" /> : <CheckCircle2 className="size-3.5 text-emerald-500" />)}

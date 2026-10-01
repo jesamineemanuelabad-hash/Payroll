@@ -160,7 +160,7 @@ export function PayrollWorkspace({
       {tabs.map((tab) => <button key={tab} type="button" role="tab" aria-selected={active === tab} onClick={() => setActive(tab)} className={`relative h-12 shrink-0 text-sm font-medium ${active === tab ? "text-indigo-700 after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-indigo-600" : "text-slate-500 hover:text-slate-800"}`}>{tab}</button>)}
     </div>
     <div className="pt-5">
-      {active === "Payroll runs" && <PayrollManagement data={dashboard} />}
+      {active === "Payroll runs" && <PayrollManagement data={dashboard} canDeleteDraftRuns={roles.some((role) => ["super_admin", "payroll_manager"].includes(role))} />}
       {active === "Contributions & tax" && (reportError && !initialReport && !dashboard.runs.length
         ? <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">{reportError}</p>
         : <PayrollCalculationTables runs={dashboard.runs} initialReport={initialReport} initialError={reportError} />)}

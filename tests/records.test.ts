@@ -5,6 +5,7 @@ import { PGlite } from "@electric-sql/pglite";
 import { calculateLeaveBalances } from "../lib/leave/balances";
 import { entities, modules } from "../lib/records/config";
 import { recordSchema } from "../lib/records/validation";
+import { createPayrollRunSchema, getPayrollCutoffPeriod } from "../lib/validations/payroll";
 
 const admin = "00000000-0000-4000-8000-000000000001";
 const reviewer = "00000000-0000-4000-8000-000000000002";
@@ -12,6 +13,14 @@ const worker = "00000000-0000-4000-8000-000000000003";
 const outsider = "00000000-0000-4000-8000-000000000004";
 const systemAdmin = "00000000-0000-4000-8000-000000000006";
 type Row = { id: string; updated_at: string; [key: string]: unknown };
+
+test("payroll periods are generated for first and second monthly cutoffs", () => {
+  assert.deepEqual(getPayrollCutoffPeriod("2026-09", "first"), { periodStart: "2026-09-01", periodEnd: "2026-09-15" });
+  assert.deepEqual(getPayrollCutoffPeriod("2026-09", "second"), { periodStart: "2026-09-16", periodEnd: "2026-09-30" });
+  assert.deepEqual(getPayrollCutoffPeriod("2024-02", "second"), { periodStart: "2024-02-16", periodEnd: "2024-02-29" });
+  assert.equal(createPayrollRunSchema.safeParse({ periodStart: "2026-09-01", periodEnd: "2026-09-30", payDate: "2026-09-30", includeActiveEmployees: true }).success, false);
+  assert.equal(createPayrollRunSchema.safeParse({ periodStart: "2026-09-16", periodEnd: "2026-09-30", payDate: "2026-09-30", includeActiveEmployees: true }).success, true);
+});
 
 test("server validation rejects invalid values and client-supplied protected fields", () => {
   assert.equal(recordSchema("payroll_runs", true).safeParse({ period_start: "2026-09-01", period_end: "2026-09-15", pay_date: "2026-09-15" }).success, true);
@@ -84,6 +93,8 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
     await db.exec(hrWorkforceAnalyticsMigration);
     const hrAnalyticsPasswordGateMigration = await readFile(new URL("../scripts/supabase/migrations/202610010011_hr_analytics_password_gate.sql", import.meta.url), "utf8");
     await db.exec(hrAnalyticsPasswordGateMigration);
+    const missingAttendanceAbsenceMigration = await readFile(new URL("../scripts/supabase/migrations/202610010012_missing_attendance_as_weekday_absence.sql", import.meta.url), "utf8");
+    await db.exec(missingAttendanceAbsenceMigration);
     await db.exec("grant all privileges on all tables in schema public to service_role");
     for (const id of [admin, reviewer, worker, outsider, systemAdmin]) {
       await db.query("insert into auth.users(id) values ($1)", [id]);
@@ -687,6 +698,46 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       assert.equal(afterRecalculation.rows[0].value.items[0].benefitEmployer, 600);
       assert.equal((afterRecalculation.rows[0].value.items[0].calculation as Record<string, unknown>).hmoEmployerCost, 500);
       created.payroll_items = (await read("payroll_items", created.payroll_items.id)).rows[0];
+    });
+    await t.test("missing attendance assumes weekday absences but preserves approved paid leave", async () => {
+      await as(admin);
+      const novemberPaidLeave = await create("leave_requests", {
+        employee_id: worker,
+        leave_type: "vacation",
+        start_date: "2026-11-02",
+        end_date: "2026-11-02",
+        total_days: 1,
+        is_paid: true,
+        reason: "Approved leave during no-attendance payroll test",
+        status: "draft",
+        rejection_reason: null,
+      });
+      const submittedNovemberLeave = await update("leave_requests", novemberPaidLeave, { status: "submitted" });
+      await update("leave_requests", submittedNovemberLeave, { status: "approved" });
+      const noAttendanceRun = await create("payroll_runs", {
+        period_start: "2026-11-01",
+        period_end: "2026-11-15",
+        pay_date: "2026-11-15",
+      });
+      await db.query("select public.calculate_payroll_run_complete($1)", [noAttendanceRun.id]);
+      const noAttendanceReport = await db.query<{
+        value: { items: Array<{ employeeId: string; workedDays: number; paidLeaveDays: number; absenceMinutes: number; absenceDeduction: number; netPay: number; calculation: Record<string, unknown> }> };
+      }>("select public.payroll_run_report($1) value", [noAttendanceRun.id]);
+      const noAttendanceItem = noAttendanceReport.rows[0].value.items.find((entry) => entry.employeeId === worker);
+      assert.ok(noAttendanceItem);
+      assert.equal(noAttendanceItem.workedDays, 0);
+      assert.equal(noAttendanceItem.paidLeaveDays, 1);
+      assert.equal(noAttendanceItem.absenceMinutes, 9 * 480);
+      assert.ok(noAttendanceItem.absenceDeduction > 0);
+      assert.ok(noAttendanceItem.netPay >= 0);
+      assert.equal(noAttendanceItem.calculation.missingAttendanceTreatedAsWeekdayAbsence, true);
+      assert.equal(noAttendanceItem.calculation.assumedAbsenceDays, 9);
+      await db.exec("reset role");
+      await db.exec("set role service_role");
+      await db.query("delete from public.payroll_items where payroll_run_id=$1", [noAttendanceRun.id]);
+      await db.query("delete from public.payroll_runs where id=$1", [noAttendanceRun.id]);
+      await db.exec("reset role");
+      await as(admin);
     });
     await t.test("approved bonuses are idempotent and payroll follows approval states", async () => {
       const run=await create("payroll_runs",{period_start:"2026-10-01",period_end:"2026-10-15",pay_date:"2026-10-15"});

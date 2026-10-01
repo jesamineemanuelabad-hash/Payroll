@@ -21,6 +21,79 @@ export async function createPayrollRun(input: CreatePayrollRunInput): Promise<Pa
   return { ok: true, id: result.data.id, demo: false };
 }
 
+export async function deleteDraftPayrollRun(runId: string): Promise<{ ok: true; deletedEntries: number } | { ok: false; message: string }> {
+  if (!z.string().uuid().safeParse(runId).success) return { ok: false, message: "Invalid payroll run." };
+  if (!hasSupabaseEnvironment()) return { ok: false, message: "Connect Supabase before deleting a payroll run." };
+
+  try {
+    const db = await createSupabaseServerClient();
+    const { data: auth } = await db.auth.getUser();
+    if (!auth.user) return { ok: false, message: "Your session expired. Sign in again." };
+
+    const { data: roles, error: roleError } = await db.rpc("record_roles", {});
+    if (roleError) return { ok: false, message: roleError.message };
+    if (!roles?.some((role) => ["super_admin", "payroll_manager"].includes(role))) {
+      return { ok: false, message: "Your role cannot delete payroll runs." };
+    }
+
+    const { data: run, error: runError } = await db
+      .from("payroll_runs")
+      .select("id, status, updated_at")
+      .eq("id", runId)
+      .maybeSingle();
+    if (runError) return { ok: false, message: runError.message };
+    if (!run) return { ok: false, message: "Payroll run not found. Refresh the payroll list." };
+    if (run.status !== "draft") return { ok: false, message: "Only draft payroll runs can be deleted." };
+
+    const { data: items, error: itemsError } = await db
+      .from("payroll_items")
+      .select("id, updated_at")
+      .eq("payroll_run_id", runId);
+    if (itemsError) return { ok: false, message: itemsError.message };
+
+    for (const item of items) {
+      const { error } = await db.rpc("mutate_record", {
+        p_entity: "payroll_items",
+        p_operation: "delete",
+        p_data: {},
+        p_id: item.id,
+        p_version: item.updated_at,
+      });
+      if (error) {
+        revalidatePath("/payroll-benefits/payroll");
+        return { ok: false, message: `The draft run remains, but a calculated employee entry could not be removed: ${error.message}` };
+      }
+    }
+
+    const { data: currentRun, error: currentRunError } = await db
+      .from("payroll_runs")
+      .select("status, updated_at")
+      .eq("id", runId)
+      .maybeSingle();
+    if (currentRunError) return { ok: false, message: `Calculated entries were removed, but the draft run could not be reloaded: ${currentRunError.message}` };
+    if (!currentRun) return { ok: false, message: "Calculated entries were removed, but the draft run no longer exists." };
+    if (currentRun.status !== "draft") return { ok: false, message: "Calculated entries were removed, but the run is no longer a draft and cannot be deleted." };
+
+    const { error: deleteError } = await db.rpc("mutate_record", {
+      p_entity: "payroll_runs",
+      p_operation: "delete",
+      p_data: {},
+      p_id: runId,
+      p_version: currentRun.updated_at,
+    });
+    if (deleteError) {
+      revalidatePath("/payroll-benefits/payroll");
+      return { ok: false, message: `Calculated entries were removed, but the draft run could not be deleted: ${deleteError.message}` };
+    }
+
+    revalidatePath("/payroll-benefits/payroll");
+    revalidatePath("/overview");
+    return { ok: true, deletedEntries: items.length };
+  } catch {
+    return { ok: false, message: "Unable to delete the draft payroll run. Refresh the payroll list before retrying." };
+  }
+}
+
 export type PayrollOperationResult = { ok: true; employees: number; ruleVersion: string } | { ok: false; message: string };
 export type PayrollValidation = { passed: boolean; issues: Array<{ severity: string; code: string; message: string }>; comparisons: Array<{ employeeId: string; sourceReference: string; grossDifference: number; deductionDifference: number; netDifference: number; passed: boolean }> };
 
