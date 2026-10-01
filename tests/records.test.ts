@@ -52,6 +52,8 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
     await db.exec(rejectionReasonMigration);
     const simulationActorsMigration = await readFile(new URL("../scripts/supabase/migrations/202610010005_compensation_simulation_actors.sql", import.meta.url), "utf8");
     await db.exec(simulationActorsMigration);
+    const payrollCalculationViewsMigration = await readFile(new URL("../scripts/supabase/migrations/202610010006_payroll_calculation_views.sql", import.meta.url), "utf8");
+    await db.exec(payrollCalculationViewsMigration);
     await db.exec("grant all privileges on all tables in schema public to service_role");
     for (const id of [admin, reviewer, worker, outsider, systemAdmin]) {
       await db.query("insert into auth.users(id) values ($1)", [id]);
@@ -572,6 +574,7 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       assert.equal(item.philhealthEmployee, 400);
       assert.equal(item.pagibigEmployee, 100);
       assert.ok(item.withholdingTax > 0);
+      assert.ok(item.taxableCompensation > 0);
       assert.ok(item.netPay < item.grossPay);
       created.payroll_items = (await read("payroll_items", created.payroll_items.id)).rows[0];
     });
@@ -588,6 +591,15 @@ test("PostgreSQL CRUD, audit, authorization, and payroll consistency", async (t)
       const paid=await db.query<{value:{status:string}}>("select public.transition_payroll_run($1,'paid') value",[run.id]);
       assert.equal(paid.rows[0].value.status,"paid");
       await assert.rejects(db.query("select public.transition_payroll_run($1,'draft')",[run.id]),/Invalid payroll transition/);
+      await as(admin);
+      const snapshot = await db.query<{ value: { items: Array<{ employeeId: string; paidBasicSalary: number; amount: number; paidPayrollEntries: number }> } }>("select public.payroll_13th_month_snapshot(2026) value");
+      const included = snapshot.rows[0].value.items.find((item) => item.employeeId === worker);
+      const paidBasicSalary = Number((await db.query<{ basic_salary: number }>("select basic_salary from public.payroll_items where payroll_run_id=$1 and employee_id=$2", [run.id, worker])).rows[0].basic_salary);
+      assert.equal(included?.paidBasicSalary, paidBasicSalary);
+      assert.equal(included?.amount, Math.round(paidBasicSalary / 12 * 100) / 100);
+      assert.equal(included?.paidPayrollEntries, 1);
+      await as(worker);
+      await assert.rejects(db.query("select public.payroll_13th_month_snapshot(2026)"), /cannot view 13th-month/i);
     });
     await t.test("employees cannot mutate records, read coworkers, self-approve, or inject SQL/fields", async () => {
       await as(worker);

@@ -105,6 +105,7 @@ export type Database = {
       calculate_payroll_run_complete: { Args: { p_run_id: string }; Returns: Json };
       transition_payroll_run: { Args: { p_run_id: string; p_target: PayrollStatus }; Returns: Json };
       payroll_run_report: { Args: { p_run_id: string }; Returns: Json };
+      payroll_13th_month_snapshot: { Args: { p_year: number }; Returns: Json };
       validate_payroll_run: { Args: { p_run_id: string }; Returns: Json };
       payroll_policy_snapshot: { Args: Record<string, never>; Returns: Json };
       save_payroll_policy: { Args: { p_policy: Json; p_id?: string | null }; Returns: Json };

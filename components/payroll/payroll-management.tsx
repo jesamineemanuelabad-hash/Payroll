@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { format, parseISO } from "date-fns";
 import {
-  ArrowDownToLine,
   ArrowUpDown,
   CalendarDays,
   CheckCircle2,
@@ -12,15 +11,8 @@ import {
   ChevronLeft,
   ChevronRight,
   CircleAlert,
-  Copy,
-  DatabaseZap,
-  FileSpreadsheet,
-  Fingerprint,
-  MoreHorizontal,
-  RefreshCw,
+  Eye,
   Search,
-  Settings2,
-  ShieldCheck,
   SlidersHorizontal,
   X,
 } from "lucide-react";
@@ -33,16 +25,12 @@ import {
   type ColumnDef,
   type SortingState,
 } from "@tanstack/react-table";
-import { toast } from "sonner";
 import { CreatePayrollRunDialog } from "@/components/payroll/create-payroll-run-dialog";
 import { MetricCard } from "@/components/shared/metric-card";
 import { PayrollStatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { formatCurrency } from "@/lib/utils";
-import { downloadRecordsAsCsv, exportRecordsToExcel } from "@/lib/export-records";
-import type { ExportRecord } from "@/types/operations";
 import type { PayrollDashboardData, PayrollRun, PayrollStatus } from "@/types/payroll";
 
 const statusOptions: { value: "all" | PayrollStatus; label: string }[] = [
@@ -55,31 +43,12 @@ const statusOptions: { value: "all" | PayrollStatus; label: string }[] = [
   { value: "failed", label: "Failed" },
 ];
 
-const payrollExportColumns = [
-  { key: "periodStart", label: "Period Start", width: 16, format: "date" as const }, { key: "periodEnd", label: "Period End", width: 16, format: "date" as const },
-  { key: "payDate", label: "Pay Date", width: 16, format: "date" as const }, { key: "employees", label: "Employees", width: 12, format: "number" as const },
-  { key: "grossPay", label: "Gross Pay", width: 18, format: "currency" as const }, { key: "deductions", label: "Deductions", width: 18, format: "currency" as const },
-  { key: "contributions", label: "Employer Contributions", width: 22, format: "currency" as const }, { key: "netPay", label: "Net Pay", width: 18, format: "currency" as const },
-  { key: "status", label: "Status", width: 18 },
-];
-
 function SortHeader({ label, onClick }: { label: string; onClick: () => void }) {
   return <button onClick={onClick} className="flex items-center gap-1.5 whitespace-nowrap font-medium text-slate-500 hover:text-slate-800">{label}<ArrowUpDown className="size-3.5 text-slate-400" /></button>;
 }
 
 function RowActions({ run }: { run: PayrollRun }) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild><Button variant="ghost" size="icon" className="size-8" aria-label={`Actions for payroll ending ${run.periodEnd}`}><MoreHorizontal /></Button></DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem asChild><Link href={`/payroll-benefits/payroll/${run.id}`}><FileSpreadsheet />View payroll run</Link></DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => toast.info("Payroll run duplicated", { description: "A new draft has been created in demo mode." })}><Copy />Duplicate as draft</DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => toast.success("Recalculation queued", { description: "Employee totals will refresh when processing completes." })}><RefreshCw />Recalculate totals</DropdownMenuItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={() => toast.info("Audit report prepared")}><ArrowDownToLine />Download audit report</DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
+  return <Button variant="ghost" size="icon" asChild className="size-8"><Link href={`/payroll-benefits/payroll/${run.id}`} aria-label={`View payroll run ending ${run.periodEnd}`}><Eye /></Link></Button>;
 }
 
 export function PayrollManagement({ data }: { data: PayrollDashboardData }) {
@@ -132,50 +101,12 @@ export function PayrollManagement({ data }: { data: PayrollDashboardData }) {
     setSearch(""); setStatus("all"); setDateFrom(""); setDateTo("");
   }
 
-  const exportRows: ExportRecord[] = filteredRuns.map((run) => ({ periodStart: run.periodStart, periodEnd: run.periodEnd, payDate: run.payDate, employees: run.employees, grossPay: run.grossPay, deductions: run.deductions, contributions: run.contributions, netPay: run.netPay, status: run.status }));
-
-  async function exportExcel() {
-    await exportRecordsToExcel(`payroll-runs-${format(new Date(), "yyyy-MM-dd")}`, "Payroll Runs", payrollExportColumns, exportRows);
-    toast.success("Payroll Excel file exported", { description: `${filteredRuns.length} payroll runs were included.` });
-  }
-
   const hasFilters = Boolean(search || status !== "all" || dateFrom || dateTo);
 
   return (
     <div>
-      <nav aria-label="Breadcrumb" className="mb-3 flex items-center gap-2 text-xs font-medium text-slate-500">
-        <span>Payroll & Benefits</span><ChevronRight className="size-3.5 text-slate-300" /><span className="text-slate-700">Payroll Management</span>
-      </nav>
-
-      <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
-        <div>
-          <div className="flex items-center gap-2.5">
-            <h1 className="text-2xl font-semibold tracking-[-0.03em] text-slate-950 sm:text-[28px]">Payroll Management</h1>
-            {data.isDemo && <span className="rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">Demo data</span>}
-          </div>
-          <p className="mt-1.5 max-w-2xl text-sm leading-6 text-slate-500">Review payroll cycles, employee earnings, deductions, contributions, and payment status.</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" onClick={exportExcel}><FileSpreadsheet />Export Excel</Button>
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild><Button variant="secondary" size="icon" aria-label="More payroll actions"><MoreHorizontal /></Button></DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onSelect={() => toast.info("Payroll settings opened in demo mode")}><Settings2 />Payroll settings</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => toast.success("Registers are up to date")}><RefreshCw />Sync payroll registers</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => { downloadRecordsAsCsv(`payroll-runs-${format(new Date(), "yyyy-MM-dd")}`, payrollExportColumns, exportRows); toast.success("Payroll records downloaded"); }}><ArrowDownToLine />Download CSV</DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => toast.info("Audit report prepared")}><FileSpreadsheet />Generate audit report</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-          <CreatePayrollRunDialog />
-        </div>
-      </div>
-
-      <section aria-label="Payroll summary" className="mt-6 grid overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.03)] sm:grid-cols-2 lg:grid-cols-5">
+      <section aria-label="Payroll summary" className="grid overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.03)] sm:grid-cols-2 lg:grid-cols-4">
         {data.metrics.map((metric, index) => <MetricCard key={metric.label} metric={metric} index={index} />)}
-      </section>
-
-      <section aria-label="Payroll calculation readiness" className="mt-6 grid gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 shadow-[0_1px_2px_rgba(16,24,40,0.03)] md:grid-cols-2 xl:grid-cols-4">
-        {[{ label: "Employee & salary records", helper: "248 records synchronized from ESS", icon: DatabaseZap }, { label: "Attendance adjustments", helper: "Late, undertime, absence, and OT calculated", icon: Fingerprint }, { label: "Statutory deductions", helper: "SSS, PhilHealth, Pag-IBIG, and tax ready", icon: ShieldCheck }, { label: "Benefits & reimbursements", helper: "12 approved items included", icon: CheckCircle2 }].map((item) => { const Icon = item.icon; return <div className="flex items-center gap-3 bg-white p-4" key={item.label}><span className="grid size-9 shrink-0 place-items-center rounded-lg bg-emerald-50 text-emerald-600"><Icon className="size-4" /></span><div className="min-w-0"><p className="text-sm font-medium text-slate-800">{item.label}</p><p className="mt-0.5 truncate text-xs text-slate-500">{item.helper}</p></div></div>; })}
       </section>
 
       <section className="mt-6 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.03)]">
@@ -185,6 +116,7 @@ export function PayrollManagement({ data }: { data: PayrollDashboardData }) {
             <p className="mt-0.5 text-xs text-slate-500">All scheduled and completed payroll periods</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {data.isConfigured && <CreatePayrollRunDialog />}
             <div className="relative min-w-[210px] flex-1 sm:w-[260px] sm:flex-none">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
               <Input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search payroll periods…" className="pl-9" aria-label="Search payroll runs" />
@@ -225,9 +157,9 @@ export function PayrollManagement({ data }: { data: PayrollDashboardData }) {
                 <tr>
                   <td colSpan={columns.length} className="px-6 py-16 text-center">
                     <span className="mx-auto grid size-10 place-items-center rounded-full bg-slate-100 text-slate-500"><SlidersHorizontal className="size-5" /></span>
-                    <h3 className="mt-3 text-sm font-semibold text-slate-900">No payroll runs match your filters</h3>
-                    <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">Try changing the payroll period, status, or search term.</p>
-                    <Button className="mt-4" variant="secondary" onClick={clearFilters}>Clear filters</Button>
+                    <h3 className="mt-3 text-sm font-semibold text-slate-900">{!data.isConfigured ? "Payroll database not connected" : data.runs.length ? "No payroll runs match your filters" : "No payroll runs yet"}</h3>
+                    <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">{!data.isConfigured ? "Connect Supabase and apply the payroll migrations to load live payroll data." : data.runs.length ? "Try changing the payroll period, status, or search term." : "Create a payroll run after employee compensation and payroll policies are configured."}</p>
+                    {data.runs.length > 0 && <Button className="mt-4" variant="secondary" onClick={clearFilters}>Clear filters</Button>}
                   </td>
                 </tr>
               )}
@@ -249,8 +181,8 @@ export function PayrollManagement({ data }: { data: PayrollDashboardData }) {
       </section>
 
       <div className="mt-3 flex items-center gap-1.5 text-xs text-slate-400">
-        {data.runs.some((run) => run.status === "failed") ? <CircleAlert className="size-3.5 text-amber-500" /> : <CheckCircle2 className="size-3.5 text-emerald-500" />}
-        Last synced {format(parseISO(data.lastUpdated), "MMM d, yyyy 'at' h:mm a")} · Amounts shown in Philippine pesos
+        {data.isConfigured && (data.runs.some((run) => run.status === "failed") ? <CircleAlert className="size-3.5 text-amber-500" /> : <CheckCircle2 className="size-3.5 text-emerald-500" />)}
+        {data.isConfigured ? `Payroll data loaded ${format(parseISO(data.lastUpdated), "MMM d, yyyy 'at' h:mm a")} · Amounts shown in Philippine pesos` : "Payroll data requires a connected database."}
       </div>
     </div>
   );

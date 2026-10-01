@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { saveRecord } from "@/app/actions/records";
 import { createSupabaseServerClient, hasSupabaseEnvironment } from "@/lib/supabase/server";
 import { createPayrollRunSchema, type CreatePayrollRunInput } from "@/lib/validations/payroll";
-import type { PayrollRunReport, PayrollStatus } from "@/types/payroll";
+import type { PayrollRunReport, PayrollStatus, PayrollThirteenthMonthSnapshot } from "@/types/payroll";
 
 export type PayrollActionResult = { ok: true; id: string; demo: boolean } | { ok: false; message: string; fieldErrors?: Record<string, string[]> };
 
@@ -64,6 +64,21 @@ export async function getPayrollRunReport(runId: string): Promise<{ ok: true; da
     const { data, error } = await db.rpc("payroll_run_report", { p_run_id: runId });
     return error ? { ok: false, message: error.message } : { ok: true, data: data as unknown as PayrollRunReport };
   } catch { return { ok: false, message: "Unable to load the payroll report." }; }
+}
+
+export async function getPayrollThirteenthMonthSnapshot(year: number): Promise<{ ok: true; data: PayrollThirteenthMonthSnapshot } | { ok: false; message: string }> {
+  if (!Number.isInteger(year) || year < 2000 || year > new Date().getFullYear()) return { ok: false, message: "Select a valid completed or current payroll year." };
+  if (!hasSupabaseEnvironment()) return { ok: false, message: "Connect Supabase and apply the payroll calculation views migration." };
+  try {
+    const db = await createSupabaseServerClient();
+    const { data: auth } = await db.auth.getUser();
+    if (!auth.user) return { ok: false, message: "Your session expired. Sign in again." };
+    const { data, error } = await db.rpc("payroll_13th_month_snapshot", { p_year: year });
+    if (error) return { ok: false, message: error.message };
+    return { ok: true, data: data as unknown as PayrollThirteenthMonthSnapshot };
+  } catch {
+    return { ok: false, message: "Unable to load 13th-month payroll data." };
+  }
 }
 
 const transitionTargets = z.enum(["draft", "pending_approval", "approved", "paid"]);

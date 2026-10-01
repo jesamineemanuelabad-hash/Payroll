@@ -28,7 +28,23 @@ export type PayrollDashboardData = {
   runs: PayrollRun[];
   metrics: PayrollMetric[];
   lastUpdated: string;
-  isDemo: boolean;
+  isConfigured: boolean;
+};
+
+export type PayrollThirteenthMonthItem = {
+  employeeId: string;
+  employeeNumber: string;
+  employeeName: string;
+  department: string;
+  paidBasicSalary: number;
+  amount: number;
+  paidPayrollEntries: number;
+};
+
+export type PayrollThirteenthMonthSnapshot = {
+  year: number;
+  basis: string;
+  items: PayrollThirteenthMonthItem[];
 };
 
 export type PayrollEmployee = {
@@ -59,6 +75,8 @@ export type PayrollReportItem = {
   lateDeduction: number; undertimeDeduction: number; absenceDeduction: number; sssEmployee: number; philhealthEmployee: number; pagibigEmployee: number;
   withholdingTax: number; benefitDeduction: number; otherDeductions: number; totalDeductions: number;
   sssEmployer: number; philhealthEmployer: number; pagibigEmployer: number; benefitEmployer: number; employerContributions: number; netPay: number; status: string;
+  taxableCompensation?: number;
+  calculation?: { monthlyBasic?: number; statutoryContributionFactor?: number; contributionAllocation?: string; ruleVersion?: string; schedule?: string; nightDifferentialRate?: number } | null;
 };
 
 export type PayrollRunReport = {

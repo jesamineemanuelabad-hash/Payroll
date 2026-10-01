@@ -45,7 +45,8 @@ Apply these files in order in the Supabase SQL editor (or your migration pipelin
 37. `scripts/supabase/migrations/202610010003_remove_demo_position_criteria.sql`
 38. `scripts/supabase/migrations/202610010004_salary_proposal_rejection_reason.sql`
 39. `scripts/supabase/migrations/202610010005_compensation_simulation_actors.sql`
-40. `scripts/supabase/seed.sql` (optional department/provider/plan catalog)
+40. `scripts/supabase/migrations/202610010006_payroll_calculation_views.sql`
+41. `scripts/supabase/seed.sql` (optional department/provider/plan catalog)
 
 Apply only migrations that have not already run. Do not rerun existing migrations. Back up any existing live data before changing its schema. The CRUD migration restricts authenticated direct table writes; application writes use validated RPCs. The operational workflow migration immediately denies terminated profiles at the database layer and adds payroll state transitions plus automatic compensation application.
 
@@ -62,6 +63,8 @@ Migration `202609300016_hmo_benefits_management.sql` adds HMO package tiers and 
 Migration `202609300019_hmo_provider_directory.sql` adds name-only Maxicare, Intellicare, and iCare provider directory entries if absent, without inventing contact details or linking a provider to a package tier. The HMO screen separates employee enrollment, package tiers, and providers into tabs. No projected annual employer budget is displayed. Provider entries do not represent a confirmed contract or quote.
 
 Migration `202609300020_compensation_planning.sql` adds HR-managed employee credential records and required/preferred credential criteria for catalog positions, with audit logging and an HR-only planning snapshot. The compensation planner compares current effective base pay, converted to a monthly equivalent (semi-monthly × 2, daily × 22, hourly × 176), against the position’s configured salary band. Those conversions are planning comparisons only; they do not alter contractual pay or payroll calculations. A credential only satisfies a criterion when it is verified and not expired. The planner does not make automatic pay or hiring decisions. HR can draft a proposal from an employee’s current pay basis; the Salary Proposals tab displays saved proposals and advances them through the existing HR and Finance review workflow. Rejections require a recorded reason. Only Finance approval and implementation create an effective-dated salary-history row.
+
+Migration `202610010006_payroll_calculation_views.sql` adds taxable compensation to payroll reports and a role-restricted 13th-month calculation view. The 13th-month amount shown is an estimate based only on basic salary in paid payroll entries for the selected calendar year, divided by twelve; it does not project unpaid or future payroll.
 
 To populate an explicitly labeled workflow simulation using existing active employees with current salary records, run `npm run seed:compensation-proposals` for a dry run, then `npm run seed:compensation-proposals -- --apply` to write six pending, six rejected, and six approved-but-unimplemented proposals. Simulation reviewer personas are labeled `[Simulation]` on the proposal; they are not auth users and receive no account or role. Only the existing active Super Admin who creates the cycle is recorded as its actual creator. These simulation proposals are not real compensation decisions and must not be implemented. Approved proposals do not affect salary history or payroll until a separate implementation action.
 
